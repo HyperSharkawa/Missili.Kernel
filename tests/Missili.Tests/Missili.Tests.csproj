@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsTestProject>true</IsTestProject>
+    <!-- 显式使用 VSTest；MTP v2 在 .NET 10 下不再接受 VSTest 桥接入口。
+         https://learn.microsoft.com/dotnet/core/testing/microsoft-testing-platform-migration-from-v1-to-v2 -->
+    <IsTestingPlatformApplication>false</IsTestingPlatformApplication>
+    <IsPackable>false</IsPackable>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Fixtures/PluginV1/PluginV1.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../Fixtures/PluginV2/PluginV2.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../../samples/Missili.Sample.Keyword/Missili.Sample.Keyword.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../../samples/Missili.Sample.History/Missili.Sample.History.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../../Missili.Host/Missili.Host.csproj" />
+    <ProjectReference Include="../../Missili.Matrix/Missili.Matrix.csproj" />
+    <ProjectReference Include="../../Missili.Nexus/Missili.Nexus.csproj" />
+    <ProjectReference Include="../../Missili.Persistence/Missili.Persistence.csproj" />
+    <ProjectReference Include="../../Missili.Kernel/Missili.Kernel.csproj" />
+    <PackageReference Include="xunit.v3" Version="4.0.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.11.0" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <Target Name="CopyPluginFixtures" AfterTargets="Build">
+    <Error Condition="!Exists('../Fixtures/PluginV1/bin/$(Configuration)/net10.0/Fixture.Plugin.dll') Or !Exists('../Fixtures/PluginV2/bin/$(Configuration)/net10.0/Fixture.Plugin.dll')" Text="当前构建配置缺少插件夹具，不允许以空目录代替热重载验收。" />
+    <ItemGroup>
+      <FixtureV1 Include="../Fixtures/PluginV1/bin/$(Configuration)/net10.0/**/*" />
+      <FixtureV2 Include="../Fixtures/PluginV2/bin/$(Configuration)/net10.0/**/*" />
+      <KeywordSample Include="../../samples/Missili.Sample.Keyword/bin/$(Configuration)/net10.0/**/*" />
+      <HistorySample Include="../../samples/Missili.Sample.History/bin/$(Configuration)/net10.0/**/*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(FixtureV1)" DestinationFiles="@(FixtureV1->'$(OutDir)Fixtures/v1/%(RecursiveDir)%(Filename)%(Extension)')" />
+    <Copy SourceFiles="@(FixtureV2)" DestinationFiles="@(FixtureV2->'$(OutDir)Fixtures/v2/%(RecursiveDir)%(Filename)%(Extension)')" />
+    <Copy SourceFiles="@(KeywordSample)" DestinationFiles="@(KeywordSample->'$(OutDir)Samples/keyword/%(RecursiveDir)%(Filename)%(Extension)')" />
+    <Copy SourceFiles="@(HistorySample)" DestinationFiles="@(HistorySample->'$(OutDir)Samples/history/%(RecursiveDir)%(Filename)%(Extension)')" />
+  </Target>
+</Project>

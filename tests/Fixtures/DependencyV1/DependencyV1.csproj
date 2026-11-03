@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><AssemblyName>Fixture.PrivateDependency</AssemblyName></PropertyGroup>
+  <ItemGroup><Compile Include="../Shared/VersionInfo.cs" Link="VersionInfo.cs" /></ItemGroup>
+</Project>

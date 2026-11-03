@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../Missili.Abstractions/Missili.Abstractions.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "sample.history",
+  "name": "历史查询示例",
+  "version": "1.0.0",
+  "entryAssembly": "Missili.Sample.History.dll",
+  "entryType": "Missili.Samples.History.Entry",
+  "contractVersion": 1
+}

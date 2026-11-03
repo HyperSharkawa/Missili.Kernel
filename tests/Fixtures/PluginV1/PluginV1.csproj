@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><AssemblyName>Fixture.Plugin</AssemblyName><EnableDynamicLoading>true</EnableDynamicLoading></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/Entry.cs" Link="Entry.cs" />
+    <ProjectReference Include="../../../Missili.Abstractions/Missili.Abstractions.csproj" Private="false" ExcludeAssets="runtime" />
+    <ProjectReference Include="../DependencyV1/DependencyV1.csproj" />
+  </ItemGroup>
+</Project>

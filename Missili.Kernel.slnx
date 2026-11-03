@@ -1,0 +1,21 @@
+<Solution>
+  <Project Path="Missili.Host/Missili.Host.csproj" />
+  <Project Path="Missili.Abstractions/Missili.Abstractions.csproj" />
+  <Project Path="Missili.Kernel/Missili.Kernel.csproj" />
+  <Project Path="Missili.Matrix/Missili.Matrix.csproj" />
+  <Project Path="Missili.Nexus/Missili.Nexus.csproj" />
+  <Project Path="Missili.Persistence/Missili.Persistence.csproj" />
+  <Folder Name="/tests/">
+    <Project Path="tests/Missili.Tests/Missili.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/fixtures/">
+    <Project Path="tests/Fixtures/DependencyV1/DependencyV1.csproj" />
+    <Project Path="tests/Fixtures/DependencyV2/DependencyV2.csproj" />
+    <Project Path="tests/Fixtures/PluginV1/PluginV1.csproj" />
+    <Project Path="tests/Fixtures/PluginV2/PluginV2.csproj" />
+  </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/Missili.Sample.Keyword/Missili.Sample.Keyword.csproj" />
+    <Project Path="samples/Missili.Sample.History/Missili.Sample.History.csproj" />
+  </Folder>
+</Solution>

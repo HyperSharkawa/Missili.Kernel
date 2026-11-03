@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "sample.keyword",
+  "name": "关键词示例",
+  "version": "1.0.0",
+  "entryAssembly": "Missili.Sample.Keyword.dll",
+  "entryType": "Missili.Samples.Keyword.Entry",
+  "contractVersion": 1
+}

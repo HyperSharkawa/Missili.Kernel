@@ -1,0 +1,8 @@
+/.context/
+**/bin/
+**/obj/
+/.vs/
+/data/
+/Missili.Host/data/
+**/TestResults/
+*.csproj.user
