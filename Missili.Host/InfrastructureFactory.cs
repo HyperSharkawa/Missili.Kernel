@@ -18,14 +18,32 @@ public static class InfrastructureFactory
         Guid runId = Guid.NewGuid();
         SqliteStore store = new(Path.Combine(options.DataDirectory, "history.db"), options);
         DispatchSignal signal = new();
-        MediaArchive media = new(store, options, loggerFactory.CreateLogger<MediaArchive>(), time);
-        MessageSender sender = new(store, transports ?? [], signal, runId, loggerFactory.CreateLogger<MessageSender>(), time);
+        AdapterDirectory adapters = new();
+        IngressRouter ingress = new();
+        MediaArchive media = new(store, options, loggerFactory.CreateLogger<MediaArchive>(), time, adapters);
+        StructuredContentArchive contents = new(store, adapters, media, options, loggerFactory.CreateLogger<StructuredContentArchive>(), time);
+        MessageSender sender = new(store, transports ?? [], signal, runId, loggerFactory.CreateLogger<MessageSender>(), time, adapters);
         FairInvocationScheduler scheduler = new(options.PluginConcurrency, options.InvocationCapacity);
         PluginManager plugins = new(options, new PluginHostServices
-        { History = store, Media = media, Transcriptions = store, Sender = sender, LoggerFactory = loggerFactory }, time);
+        {
+            History = store,
+            Events = store,
+            Ingress = ingress,
+            EventIngress = ingress,
+            Adapters = adapters,
+            Receipts = sender,
+            Media = media,
+            MediaImporter = media,
+            Contents = contents,
+            Transcriptions = store,
+            Sender = sender,
+            LoggerFactory = loggerFactory
+        }, time);
         HookOrderService orders = new(store, plugins);
         MessageDispatcher dispatcher = new(plugins, orders, scheduler, sender, loggerFactory.CreateLogger<MessageDispatcher>());
-        return new InfrastructureRuntime(store, media, dispatcher, plugins, scheduler, orders, sender, signal, runId,
-            options, loggerFactory.CreateLogger<InfrastructureRuntime>(), time);
+        InfrastructureRuntime runtime = new(store, media, dispatcher, plugins, scheduler, orders, sender, signal, runId,
+            options, loggerFactory.CreateLogger<InfrastructureRuntime>(), time, adapters, contents);
+        ingress.Bind(runtime);
+        return runtime;
     }
 }

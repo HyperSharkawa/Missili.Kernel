@@ -37,7 +37,14 @@ public sealed partial class SqliteStore : IInfrastructureStore
             .ExecuteUpdate(setters => setters.SetProperty(item => item.Delivery, DeliveryState.Unknown));
         database.Messages.Where(item => item.RunId != runId && item.Delivery == DeliveryState.Pending)
             .ExecuteUpdate(setters => setters.SetProperty(item => item.Delivery, DeliveryState.Cancelled));
+        database.Database.ExecuteSqlRaw("UPDATE MediaReferences SET State = 4, Error = '流导入被进程中断，原始输入不可恢复。' WHERE State = 1 AND json_extract(SourceJson, '$.Kind') = 'import';");
         database.MediaReferences.Where(item => item.State == MediaState.Downloading)
+            .ExecuteUpdate(setters => setters.SetProperty(item => item.State, MediaState.Pending));
+        database.PlatformEvents.Where(item => item.RunId != runId && (item.Processing == ProcessingState.Pending || item.Processing == ProcessingState.Running))
+            .ExecuteUpdate(setters => setters.SetProperty(item => item.Processing, ProcessingState.Interrupted));
+        database.StructuredContents.Where(item => item.State == ContentState.Expanding || item.State == ContentState.WaitingForAdapter)
+            .ExecuteUpdate(setters => setters.SetProperty(item => item.State, ContentState.Pending).SetProperty(item => item.Claimed, false));
+        database.MediaReferences.Where(item => item.State == MediaState.WaitingForAdapter)
             .ExecuteUpdate(setters => setters.SetProperty(item => item.State, MediaState.Pending));
         database.MediaReferences.Where(item => item.Claimed)
             .ExecuteUpdate(setters => setters.SetProperty(item => item.Claimed, false));
@@ -55,6 +62,7 @@ public sealed partial class SqliteStore : IInfrastructureStore
     public Task<ReceiveReceipt> AppendAsync(IncomingMessage message, DateTimeOffset receivedAt, Guid runId, CancellationToken cancellationToken)
     {
         message.Validate();
+        message = message.Freeze();
         return WriteAsync(database =>
         {
             MessageEntity entity = CreateMessage(message.Address, message.SenderId, receivedAt, runId);
@@ -63,26 +71,17 @@ public sealed partial class SqliteStore : IInfrastructureStore
             entity.PlatformMessageId = message.PlatformMessageId;
             entity.DeduplicationKey = message.DeduplicationKey;
             entity.OccurredAt = message.OccurredAt?.ToUnixTimeMilliseconds();
+            entity.MetadataJson = message.Metadata?.GetRawText();
+            entity.Recalled = HasRecall(database, entity);
+            if (message.PlatformMessageId is not null)
+            {
+                MessageEntity? observed = WithSegments(InConversation(database.Messages, message.Address)).SingleOrDefault(item =>
+                    item.CanonicalId == null && item.Direction == message.Direction && item.PlatformMessageId == message.PlatformMessageId);
+                if (observed is not null) return new ReceiveReceipt { Message = Snapshot(observed), Duplicate = true };
+            }
             for (int index = 0; index < message.Segments.Length; index++)
             {
-                IncomingSegment segment = message.Segments[index];
-                Guid? mediaId = null;
-                // 每个媒体段持有独立引用，原件稍后按内容共享。
-                if (segment.Source is not null)
-                {
-                    mediaId = Guid.NewGuid();
-                    string? sourceKey = segment.Source.StableKey is null ? null : JsonSerializer.Serialize(
-                        new[] { message.Address.AdapterId, message.Address.BotAccountId, segment.Source.StableKey });
-                    database.MediaReferences.Add(new MediaEntity
-                    {
-                        Id = mediaId.Value,
-                        Kind = segment.Kind,
-                        Source = segment.Source.Uri.AbsoluteUri,
-                        SourceKey = sourceKey,
-                        CreatedAt = receivedAt.ToUnixTimeMilliseconds()
-                    });
-                }
-                entity.Segments.Add(new SegmentEntity { Position = index, Kind = segment.Kind, Text = segment.Text, MediaId = mediaId });
+                entity.Segments.Add(CreateSegment(database, message.Segments[index], message.Address, index, receivedAt));
             }
             database.Messages.Add(entity);
             try
@@ -91,11 +90,12 @@ public sealed partial class SqliteStore : IInfrastructureStore
                 return new ReceiveReceipt { Message = Snapshot(entity) };
             }
             catch (DbUpdateException exception) when (message.DeduplicationKey is not null &&
-                exception.InnerException is SqliteException { SqliteExtendedErrorCode: 2067 })
+                exception.InnerException is SqliteException { SqliteExtendedErrorCode: 2067 } conflict &&
+                conflict.Message.Contains("Messages.DeduplicationKey", StringComparison.Ordinal))
             {
-                // 本次插入唯一的非主键唯一索引是消息去重键，其他数据库失败继续向上传播。
+                // 只有明确发生于消息去重索引的冲突才归类为重复。
                 database.ChangeTracker.Clear();
-                MessageEntity? existing = database.Messages.AsNoTracking().Include(item => item.Segments)
+                MessageEntity? existing = database.Messages.AsNoTracking().Include(item => item.Segments).ThenInclude(item => item.Media)
                     .SingleOrDefault(item => item.AdapterId == message.Address.AdapterId &&
                         item.BotAccountId == message.Address.BotAccountId && item.DeduplicationKey == message.DeduplicationKey);
                 if (existing is null) throw;
@@ -109,27 +109,41 @@ public sealed partial class SqliteStore : IInfrastructureStore
     {
         message.Address.Validate();
         ContentValidation.Validate(message.Segments);
+        message = message.Freeze();
         return WriteAsync(database =>
         {
             MessageEntity entity = CreateMessage(message.Address, message.Address.BotAccountId, now, runId);
             entity.Direction = MessageDirection.Outgoing;
             entity.Delivery = DeliveryState.Pending;
             entity.Processing = ProcessingState.Finished;
+            entity.MetadataJson = message.Metadata?.GetRawText();
             for (int index = 0; index < message.Segments.Length; index++)
             {
                 MessageSegment segment = message.Segments[index];
-                Guid? mediaId = null;
-                // 已清理或不存在的引用不能伪造为可以发送的文件。
-                if (segment.MediaId.HasValue)
+                SegmentEntity row = new()
                 {
-                    MediaEntity original = database.MediaReferences.AsNoTracking().Single(item => item.Id == segment.MediaId.Value);
+                    Position = index,
+                    Kind = segment.Kind,
+                    Version = segment.Version,
+                    Text = segment.Text,
+                    PayloadJson = segment.Payload?.GetRawText(),
+                    ParseState = segment.ParseState,
+                    ParseError = segment.ParseError,
+                    ContentId = segment.ContentId
+                };
+                // 已清理或不存在的引用不能伪造为可以发送的文件。
+                for (int ordinal = 0; ordinal < segment.MediaIds.Length; ordinal++)
+                {
+                    MediaEntity original = database.MediaReferences.AsNoTracking().Single(item => item.Id == segment.MediaIds[ordinal]);
                     if (original.State != MediaState.Available) throw new InvalidOperationException("发送媒体原件尚不可用。");
-                    mediaId = Guid.NewGuid();
+                    Guid mediaId = Guid.NewGuid();
                     database.MediaReferences.Add(new MediaEntity
                     {
-                        Id = mediaId.Value,
+                        Id = mediaId,
                         Kind = original.Kind,
-                        Source = original.Source,
+                        SourceJson = original.SourceJson,
+                        AdapterId = original.AdapterId,
+                        RepresentationJson = original.RepresentationJson,
                         SourceKey = original.SourceKey,
                         ContentKey = original.ContentKey,
                         Length = original.Length,
@@ -137,8 +151,9 @@ public sealed partial class SqliteStore : IInfrastructureStore
                         State = MediaState.Available,
                         CreatedAt = now.ToUnixTimeMilliseconds()
                     });
+                    row.Media.Add(new MediaBindingEntity { MediaId = mediaId, Ordinal = ordinal });
                 }
-                entity.Segments.Add(new SegmentEntity { Position = index, Kind = segment.Kind, Text = segment.Text, MediaId = mediaId });
+                entity.Segments.Add(row);
             }
             database.Messages.Add(entity);
             database.SaveChanges();
@@ -149,12 +164,31 @@ public sealed partial class SqliteStore : IInfrastructureStore
     /// <summary>保存传输状态；只有确认成功才产生发送后通知。</summary>
     public Task SetDeliveryAsync(long id, TransportResult result, CancellationToken cancellationToken) => WriteAsync(database =>
     {
-        MessageEntity message = database.Messages.Single(item => item.Id == id);
+        MessageEntity message = ResolveCanonical(database, database.Messages.Single(item => item.Id == id));
         if (message.Direction != MessageDirection.Outgoing) throw new InvalidOperationException("只有发送意图可以更新回执。");
+        // 平台自身事件可能先于回执到达，已经确认的事实不能被迟到超时降级。
+        if (message.Delivery == DeliveryState.Confirmed && result.State != DeliveryState.Confirmed) return true;
+        if (result.State == DeliveryState.Confirmed && result.PlatformMessageId is not null)
+        {
+            MessageEntity? existing = InConversation(database.Messages, Address(message)).SingleOrDefault(item =>
+                item.Id != message.Id && item.CanonicalId == null && item.Direction == MessageDirection.Outgoing && item.PlatformMessageId == result.PlatformMessageId);
+            if (existing is not null)
+            {
+                message.CanonicalId = existing.Id;
+                message.Processing = ProcessingState.Finished;
+                message.Delivery = DeliveryState.Confirmed;
+                message.PlatformMessageId = result.PlatformMessageId;
+                existing.Recalled |= message.Recalled;
+                database.SaveChanges();
+                return true;
+            }
+        }
+        bool newlyConfirmed = message.Delivery != DeliveryState.Confirmed && result.State == DeliveryState.Confirmed;
         message.Delivery = result.State;
         message.PlatformMessageId = result.PlatformMessageId ?? message.PlatformMessageId;
         message.DeliveryError = result.Error;
-        if (result.State == DeliveryState.Confirmed) message.Processing = ProcessingState.Pending;
+        message.Recalled |= HasRecall(database, message);
+        if (newlyConfirmed) message.Processing = ProcessingState.Pending;
         database.SaveChanges();
         return true;
     }, cancellationToken);
@@ -165,8 +199,8 @@ public sealed partial class SqliteStore : IInfrastructureStore
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(count);
         return WriteAsync(database =>
         {
-            List<MessageEntity> messages = database.Messages.Include(item => item.Segments)
-                .Where(item => item.RunId == runId && item.Processing == ProcessingState.Pending)
+            List<MessageEntity> messages = database.Messages.Include(item => item.Segments).ThenInclude(item => item.Media)
+                .Where(item => item.CanonicalId == null && item.RunId == runId && item.Processing == ProcessingState.Pending)
                 .OrderBy(item => item.Id).Take(count).ToList();
             foreach (MessageEntity message in messages) message.Processing = ProcessingState.Running;
             database.SaveChanges();
@@ -194,6 +228,8 @@ public sealed partial class SqliteStore : IInfrastructureStore
     /// <summary>只标记当前运行的未完成状态，不触发重新分发或补发。</summary>
     public Task InterruptRunAsync(Guid runId, CancellationToken cancellationToken) => WriteAsync(database =>
     {
+        database.PlatformEvents.Where(item => item.RunId == runId && (item.Processing == ProcessingState.Pending || item.Processing == ProcessingState.Running))
+            .ExecuteUpdate(setters => setters.SetProperty(item => item.Processing, ProcessingState.Interrupted));
         database.Messages.Where(item => item.RunId == runId &&
             (item.Processing == ProcessingState.Pending || item.Processing == ProcessingState.Running))
             .ExecuteUpdate(setters => setters.SetProperty(item => item.Processing, ProcessingState.Interrupted));
@@ -207,8 +243,11 @@ public sealed partial class SqliteStore : IInfrastructureStore
     /// <summary>按主键读取包含有序消息段的脱离跟踪快照。</summary>
     public Task<MessageSnapshot?> GetAsync(long id, CancellationToken cancellationToken = default) => ReadAsync(database =>
     {
-        MessageEntity? entity = database.Messages.AsNoTracking().Include(item => item.Segments).SingleOrDefault(item => item.Id == id);
-        return entity is null ? null : Snapshot(entity);
+        MessageEntity? entity = database.Messages.AsNoTracking().Include(item => item.Segments).ThenInclude(item => item.Media).SingleOrDefault(item => item.Id == id);
+        if (entity is null) return null;
+        MessageEntity canonical = ResolveCanonical(database, entity);
+        if (canonical.Id != entity.Id) canonical = WithSegments(database.Messages.AsNoTracking()).Single(item => item.Id == canonical.Id);
+        return Snapshot(canonical);
     }, cancellationToken);
 
     /// <summary>执行数据库端筛选及游标分页；返回顺序与翻页方向相同。</summary>
@@ -220,11 +259,11 @@ public sealed partial class SqliteStore : IInfrastructureStore
         query.Address?.Validate();
         return ReadAsync(database =>
         {
-            IQueryable<MessageEntity> source = database.Messages.AsNoTracking();
+            IQueryable<MessageEntity> source = database.Messages.AsNoTracking().Where(item => item.CanonicalId == null);
             if (query.Address is not null) source = InConversation(source, query.Address);
             if (query.SenderId is not null) source = source.Where(item => item.SenderId == query.SenderId);
             if (query.Direction.HasValue) source = source.Where(item => item.Direction == query.Direction.Value);
-            if (query.SegmentKind.HasValue) source = source.Where(item => item.Segments.Any(segment => segment.Kind == query.SegmentKind.Value));
+            if (query.SegmentType is not null) source = source.Where(item => item.Segments.Any(segment => segment.Kind == query.SegmentType));
             if (!query.IncludeRecalled) source = source.Where(item => !item.Recalled);
             if (!query.IncludeDeleted) source = source.Where(item => !item.Deleted);
             if (!query.IncludeUnconfirmed) source = source.Where(item => item.Direction == MessageDirection.Incoming || item.Delivery == DeliveryState.Confirmed);
@@ -263,7 +302,7 @@ public sealed partial class SqliteStore : IInfrastructureStore
                 source = forward ? source.OrderBy(item => item.OccurredAt).ThenBy(item => item.Id)
                     : source.OrderByDescending(item => item.OccurredAt).ThenByDescending(item => item.Id);
             }
-            List<MessageEntity> rows = source.Include(item => item.Segments).Take(query.PageSize + 1).ToList();
+            List<MessageEntity> rows = source.Include(item => item.Segments).ThenInclude(item => item.Media).Take(query.PageSize + 1).ToList();
             bool more = rows.Count > query.PageSize;
             if (more) rows.RemoveAt(rows.Count - 1);
             MessageEntity? last = rows.LastOrDefault();
@@ -282,12 +321,15 @@ public sealed partial class SqliteStore : IInfrastructureStore
         if (before is < 0 or > 50 || after is < 0 or > 50) throw new ArgumentOutOfRangeException(nameof(before), "邻近数量必须在 0 至 50 之间。");
         return ReadAsync(database =>
         {
-            MessageEntity center = database.Messages.AsNoTracking().Include(item => item.Segments).Single(item => item.Id == id);
-            IQueryable<MessageEntity> source = InConversation(database.Messages.AsNoTracking(), Address(center));
-            List<MessageEntity> previous = source.Where(item => item.Id < id).OrderByDescending(item => item.Id).Take(before).Include(item => item.Segments).ToList();
+            MessageEntity center = database.Messages.AsNoTracking().Include(item => item.Segments).ThenInclude(item => item.Media).Single(item => item.Id == id);
+            center = ResolveCanonical(database, center);
+            center = WithSegments(database.Messages.AsNoTracking()).Single(item => item.Id == center.Id);
+            id = center.Id;
+            IQueryable<MessageEntity> source = InConversation(database.Messages.AsNoTracking(), Address(center)).Where(item => item.CanonicalId == null);
+            List<MessageEntity> previous = source.Where(item => item.Id < id).OrderByDescending(item => item.Id).Take(before).Include(item => item.Segments).ThenInclude(item => item.Media).ToList();
             previous.Reverse();
             previous.Add(center);
-            previous.AddRange(source.Where(item => item.Id > id).OrderBy(item => item.Id).Take(after).Include(item => item.Segments).ToList());
+            previous.AddRange(source.Where(item => item.Id > id).OrderBy(item => item.Id).Take(after).Include(item => item.Segments).ThenInclude(item => item.Media).ToList());
             return previous.Select(Snapshot).ToImmutableArray();
         }, cancellationToken);
     }
@@ -348,8 +390,18 @@ public sealed partial class SqliteStore : IInfrastructureStore
         Deleted = entity.Deleted,
         Processing = entity.Processing,
         Delivery = entity.Delivery,
+        Metadata = ParseJson(entity.MetadataJson),
         Segments = entity.Segments.OrderBy(item => item.Position).Select(item => new MessageSegment
-        { Kind = item.Kind, Text = item.Text, MediaId = item.MediaId }).ToImmutableArray()
+        {
+            Kind = item.Kind,
+            Version = item.Version,
+            Text = item.Text,
+            Payload = ParseJson(item.PayloadJson),
+            ParseState = item.ParseState,
+            ParseError = item.ParseError,
+            ContentId = item.ContentId,
+            MediaIds = item.Media.OrderBy(link => link.Ordinal).Select(link => link.MediaId).ToImmutableArray()
+        }).ToImmutableArray()
     };
 
     /// <summary>等待已入队读写结束；宿主必须先停止业务生产者。</summary>

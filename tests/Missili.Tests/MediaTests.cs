@@ -24,8 +24,8 @@ public sealed class MediaTests
         }, token);
         ReceiveReceipt first = await fixture.Store.AppendAsync(TestStore.MediaMessage(server.BaseAddress, "same"), TestStore.Now, fixture.RunId, token);
         ReceiveReceipt second = await fixture.Store.AppendAsync(TestStore.MediaMessage(server.BaseAddress, "same"), TestStore.Now, fixture.RunId, token);
-        Guid firstId = first.Message!.Segments[0].MediaId!.Value;
-        Guid secondId = second.Message!.Segments[0].MediaId!.Value;
+        Guid firstId = first.Message!.Segments[0].MediaIds[0];
+        Guid secondId = second.Message!.Segments[0].MediaIds[0];
         await using MediaArchive archive = new(fixture.Store, fixture.Options, NullLogger<MediaArchive>.Instance);
         await archive.StartAsync(token);
         await using (MediaReadResult one = await archive.OpenReadAsync(firstId, token).WaitAsync(TimeSpan.FromSeconds(10), token)) Assert.NotNull(one.Content);
@@ -57,13 +57,13 @@ public sealed class MediaTests
         await using TestHttpServer server = await TestHttpServer.StartAsync(context =>
             context.Response.Body.WriteAsync(new byte[] { 1, 2, 3 }, context.RequestAborted).AsTask(), token);
         ReceiveReceipt failed = await fixture.Store.AppendAsync(TestStore.MediaMessage(server.BaseAddress), TestStore.Now, fixture.RunId, token);
-        Guid failedId = failed.Message!.Segments[0].MediaId!.Value;
+        Guid failedId = failed.Message!.Segments[0].MediaIds[0];
         Directory.CreateDirectory(Path.Combine(fixture.DirectoryPath, "media", "staging", failedId.ToString("N") + ".part"));
         ReceiveReceipt valid = await fixture.Store.AppendAsync(TestStore.MediaMessage(server.BaseAddress), TestStore.Now, fixture.RunId, token);
         await using MediaArchive archive = new(fixture.Store, fixture.Options, NullLogger<MediaArchive>.Instance);
         await archive.StartAsync(token);
         await using MediaReadResult failure = await archive.OpenReadAsync(failedId, token).WaitAsync(TimeSpan.FromSeconds(10), token);
-        await using MediaReadResult success = await archive.OpenReadAsync(valid.Message!.Segments[0].MediaId!.Value, token).WaitAsync(TimeSpan.FromSeconds(10), token);
+        await using MediaReadResult success = await archive.OpenReadAsync(valid.Message!.Segments[0].MediaIds[0], token).WaitAsync(TimeSpan.FromSeconds(10), token);
         Assert.Equal(MediaState.Failed, failure.Status.State);
         Assert.Null(failure.Content);
         Assert.Equal(MediaState.Available, success.Status.State);
@@ -90,7 +90,7 @@ public sealed class MediaTests
             else await context.Response.Body.WriteAsync(new byte[] { 2, 3 }, context.RequestAborted);
         }, token);
         ReceiveReceipt message = await fixture.Store.AppendAsync(TestStore.MediaMessage(server.BaseAddress), TestStore.Now, fixture.RunId, token);
-        Guid id = message.Message!.Segments[0].MediaId!.Value;
+        Guid id = message.Message!.Segments[0].MediaIds[0];
         await using (MediaArchive first = new(fixture.Store, fixture.Options, NullLogger<MediaArchive>.Instance))
         {
             await first.StartAsync(token);
@@ -131,7 +131,7 @@ public sealed class MediaTests
             ReceiveReceipt message = await fixture.Store.AppendAsync(TestStore.MediaMessage(new Uri($"https://127.0.0.1:{port}/media")), TestStore.Now, fixture.RunId, token);
             await using MediaArchive archive = new(fixture.Store, fixture.Options, NullLogger<MediaArchive>.Instance);
             await archive.StartAsync(token);
-            await using MediaReadResult result = await archive.OpenReadAsync(message.Message!.Segments[0].MediaId!.Value, token).WaitAsync(TimeSpan.FromSeconds(5), token);
+            await using MediaReadResult result = await archive.OpenReadAsync(message.Message!.Segments[0].MediaIds[0], token).WaitAsync(TimeSpan.FromSeconds(5), token);
             Assert.Equal(MediaState.Failed, result.Status.State);
         }
         finally
@@ -155,7 +155,7 @@ public sealed class MediaTests
         ReceiveReceipt message = await fixture.Store.AppendAsync(TestStore.MediaMessage(server.BaseAddress), TestStore.Now, fixture.RunId, token);
         await using MediaArchive archive = new(fixture.Store, fixture.Options, NullLogger<MediaArchive>.Instance);
         await archive.StartAsync(token);
-        await using MediaReadResult result = await archive.OpenReadAsync(message.Message!.Segments[0].MediaId!.Value, token).WaitAsync(TimeSpan.FromSeconds(10), token);
+        await using MediaReadResult result = await archive.OpenReadAsync(message.Message!.Segments[0].MediaIds[0], token).WaitAsync(TimeSpan.FromSeconds(10), token);
         Assert.Equal(MediaState.Failed, result.Status.State);
         Assert.Null(result.Content);
     }
@@ -176,7 +176,7 @@ public sealed class MediaTests
         ReceiveReceipt message = await fixture.Store.AppendAsync(TestStore.MediaMessage(server.BaseAddress), TestStore.Now, fixture.RunId, token);
         await using MediaArchive archive = new(fixture.Store, fixture.Options, NullLogger<MediaArchive>.Instance);
         await archive.StartAsync(token);
-        await using MediaReadResult result = await archive.OpenReadAsync(message.Message!.Segments[0].MediaId!.Value, token).WaitAsync(TimeSpan.FromSeconds(10), token);
+        await using MediaReadResult result = await archive.OpenReadAsync(message.Message!.Segments[0].MediaIds[0], token).WaitAsync(TimeSpan.FromSeconds(10), token);
         Assert.Equal(MediaState.Failed, result.Status.State);
         Assert.Null(result.Content);
         Assert.Empty(Directory.EnumerateFiles(Path.Combine(fixture.DirectoryPath, "media", "objects"), "*", SearchOption.AllDirectories));
@@ -206,7 +206,7 @@ public sealed class MediaTests
         ReceiveReceipt message = await fixture.Store.AppendAsync(TestStore.MediaMessage(server.BaseAddress), TestStore.Now, fixture.RunId, token);
         await using MediaArchive archive = new(fixture.Store, fixture.Options, NullLogger<MediaArchive>.Instance);
         await archive.StartAsync(token);
-        await using MediaReadResult result = await archive.OpenReadAsync(message.Message!.Segments[0].MediaId!.Value, token).WaitAsync(TimeSpan.FromSeconds(100), token);
+        await using MediaReadResult result = await archive.OpenReadAsync(message.Message!.Segments[0].MediaIds[0], token).WaitAsync(TimeSpan.FromSeconds(100), token);
         Assert.Equal(MediaState.Available, result.Status.State);
         Assert.Equal(chunk.Length * 66L, result.Status.Length);
     }
@@ -226,8 +226,8 @@ public sealed class MediaTests
         }, token);
         ReceiveReceipt first = await fixture.Store.AppendAsync(TestStore.MediaMessage(server.BaseAddress, "stable"), TestStore.Now, fixture.RunId, token);
         ReceiveReceipt second = await fixture.Store.AppendAsync(TestStore.MediaMessage(server.BaseAddress, "stable"), TestStore.Now, fixture.RunId, token);
-        Guid firstId = first.Message!.Segments[0].MediaId!.Value;
-        Guid secondId = second.Message!.Segments[0].MediaId!.Value;
+        Guid firstId = first.Message!.Segments[0].MediaIds[0];
+        Guid secondId = second.Message!.Segments[0].MediaIds[0];
         Assert.NotEqual(firstId, secondId);
         await using MediaArchive archive = new(fixture.Store, fixture.Options, NullLogger<MediaArchive>.Instance);
         await archive.StartAsync(token);
@@ -258,7 +258,7 @@ public sealed class MediaTests
             await context.Response.Body.WriteAsync(new byte[] { 7, 8 }, context.RequestAborted);
         }, token);
         ReceiveReceipt message = await fixture.Store.AppendAsync(TestStore.MediaMessage(server.BaseAddress), TestStore.Now, fixture.RunId, token);
-        Guid id = message.Message!.Segments[0].MediaId!.Value;
+        Guid id = message.Message!.Segments[0].MediaIds[0];
         await using MediaArchive archive = new(fixture.Store, fixture.Options, NullLogger<MediaArchive>.Instance);
         await archive.StartAsync(token);
         using CancellationTokenSource caller = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -287,7 +287,7 @@ public sealed class MediaTests
             return Task.CompletedTask;
         }, token);
         ReceiveReceipt message = await fixture.Store.AppendAsync(TestStore.MediaMessage(server.BaseAddress), TestStore.Now, fixture.RunId, token);
-        Guid id = message.Message!.Segments[0].MediaId!.Value;
+        Guid id = message.Message!.Segments[0].MediaIds[0];
         await using MediaArchive archive = new(fixture.Store, fixture.Options, NullLogger<MediaArchive>.Instance);
         await archive.StartAsync(token);
         await using MediaReadResult first = await archive.OpenReadAsync(id, token).WaitAsync(TimeSpan.FromSeconds(10), token);
@@ -315,7 +315,7 @@ public sealed class MediaTests
         ReceiveReceipt message = await fixture.Store.AppendAsync(TestStore.MediaMessage(server.BaseAddress), TestStore.Now, fixture.RunId, token);
         await using MediaArchive archive = new(fixture.Store, fixture.Options, NullLogger<MediaArchive>.Instance);
         await archive.StartAsync(token);
-        await using MediaReadResult result = await archive.OpenReadAsync(message.Message!.Segments[0].MediaId!.Value, token).WaitAsync(TimeSpan.FromSeconds(10), token);
+        await using MediaReadResult result = await archive.OpenReadAsync(message.Message!.Segments[0].MediaIds[0], token).WaitAsync(TimeSpan.FromSeconds(10), token);
         Assert.Equal(MediaState.Failed, result.Status.State);
         Assert.Null(result.Content);
     }
@@ -327,7 +327,7 @@ public sealed class MediaTests
         CancellationToken token = TestContext.Current.CancellationToken;
         await using TestStore fixture = await TestStore.CreateAsync();
         ReceiveReceipt message = await fixture.Store.AppendAsync(TestStore.MediaMessage(new Uri("http://127.0.0.1:1/unreachable")), TestStore.Now, fixture.RunId, token);
-        Guid id = message.Message!.Segments[0].MediaId!.Value;
+        Guid id = message.Message!.Segments[0].MediaIds[0];
         await fixture.Store.ClaimMediaAsync(1, token);
         string temporary = "media/staging/" + id.ToString("N") + ".part";
         string target = "media/objects/ab/recorded-object";

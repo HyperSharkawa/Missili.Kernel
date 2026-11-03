@@ -1,4 +1,5 @@
 /.context/
+/artifacts/
 **/bin/
 **/obj/
 /.vs/

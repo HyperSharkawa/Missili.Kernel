@@ -1,0 +1,12 @@
+{
+  "instances": [
+    {
+      "id": "mock",
+      "botAccountId": "10001",
+      "direction": "Forward",
+      "layout": "Universal",
+      "url": "ws://127.0.0.1:16700/",
+      "authentication": "None"
+    }
+  ]
+}

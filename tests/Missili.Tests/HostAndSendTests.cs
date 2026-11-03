@@ -183,5 +183,5 @@ public sealed class HostAndSendTests
 
     /// <summary>提供统一的纯文本发送输入。</summary>
     private static OutgoingMessage Text() => new()
-    { Address = TestStore.Address(), Segments = [new MessageSegment { Kind = SegmentKind.Text, Text = "synthetic" }] };
+    { Address = TestStore.Address(), Segments = [new MessageSegment { Kind = SegmentTypes.Text, Text = "synthetic" }] };
 }

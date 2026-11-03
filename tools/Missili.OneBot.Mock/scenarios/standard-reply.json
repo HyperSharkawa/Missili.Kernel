@@ -1,0 +1,28 @@
+{
+  "mode": "server",
+  "url": "http://127.0.0.1:16700",
+  "layout": "Universal",
+  "selfId": 10001,
+  "steps": [
+    { "operation": "awaitAction", "action": "get_login_info" },
+    {
+      "operation": "event",
+      "event": {
+        "time": 1700000000,
+        "self_id": 10001,
+        "post_type": "message",
+        "message_type": "group",
+        "sub_type": "normal",
+        "message_id": 501,
+        "group_id": 20001,
+        "user_id": 30001,
+        "message": [{ "type": "text", "data": { "text": "ping" } }],
+        "raw_message": "ping",
+        "font": 0,
+        "sender": { "user_id": 30001, "nickname": "合成用户" }
+      }
+    },
+    { "operation": "awaitAction", "action": "send_group_msg" },
+    { "operation": "assertCalls", "action": "send_group_msg", "count": 1 }
+  ]
+}

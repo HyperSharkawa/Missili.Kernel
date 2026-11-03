@@ -5,7 +5,7 @@ using Missili.Kernel;
 namespace Missili.Host;
 
 /// <summary>按宿主生命周期启动基础设施和明确启用的本地编译插件。</summary>
-internal sealed class InfrastructureLifetime : IHostedService
+internal sealed class InfrastructureLifetime : IHostedLifecycleService
 {
     private readonly InfrastructureRuntime _runtime;
     private readonly IConfiguration _configuration;
@@ -40,4 +40,12 @@ internal sealed class InfrastructureLifetime : IHostedService
 
     /// <summary>请求有序停止，存储关闭由运行时实际工作退出后执行。</summary>
     public Task StopAsync(CancellationToken cancellationToken) => _runtime.StopAsync(cancellationToken);
+    /// <summary>启动前阶段不提前连接数据库或加载插件。</summary>
+    public Task StartingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    /// <summary>启动工作已经由 StartAsync 顺序完成。</summary>
+    public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    /// <summary>在 Kestrel 等待活动请求退出之前关闭插件连接，避免双方互等。</summary>
+    public Task StoppingAsync(CancellationToken cancellationToken) => _runtime.StopAsync(cancellationToken);
+    /// <summary>资源最终释放由运行时异步释放入口负责。</summary>
+    public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

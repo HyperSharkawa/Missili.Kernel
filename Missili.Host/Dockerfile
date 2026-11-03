@@ -18,6 +18,7 @@ COPY ["Missili.Kernel/Missili.Kernel.csproj", "Missili.Kernel/"]
 COPY ["Missili.Matrix/Missili.Matrix.csproj", "Missili.Matrix/"]
 COPY ["Missili.Nexus/Missili.Nexus.csproj", "Missili.Nexus/"]
 COPY ["Missili.Persistence/Missili.Persistence.csproj", "Missili.Persistence/"]
+COPY ["Missili.Adapters.OneBot/Missili.Adapters.OneBot.csproj", "Missili.Adapters.OneBot/"]
 COPY ["Missili.Host/Missili.Host.csproj", "Missili.Host/"]
 RUN dotnet restore "./Missili.Host/Missili.Host.csproj"
 COPY . .

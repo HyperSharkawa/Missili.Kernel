@@ -116,7 +116,7 @@ public sealed class RuntimeTests
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(10), token);
         ReceiveReceipt text = await fixture.Runtime.ReceiveAsync(TestStore.Message("keyword"), token);
         await fixture.Transport.WaitForAsync(message => message.Segments[0].Text == "v1:keyword", token);
-        Assert.NotEqual(MediaState.Available, (await fixture.Runtime.Media.GetStatusAsync(image.Message!.Segments[0].MediaId!.Value, token))!.State);
+        Assert.NotEqual(MediaState.Available, (await fixture.Runtime.Media.GetStatusAsync(image.Message!.Segments[0].MediaIds[0], token))!.State);
         release.TrySetResult();
         await fixture.Transport.WaitForAsync(message => message.Segments[0].Text == "media-ready", token);
         await fixture.FinishedAsync(image.Message.Id, token);
@@ -171,7 +171,7 @@ public sealed class RuntimeTests
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(token);
         await ExecuteSqlAsync(fixture, "CREATE TRIGGER fail_intent BEFORE INSERT ON Messages WHEN NEW.Direction=1 BEGIN SELECT RAISE(ABORT, 'synthetic'); END;", token);
         SendResult result = await fixture.Runtime.Sender.SendAsync(new OutgoingMessage
-        { Address = TestStore.Address(), Segments = [new MessageSegment { Kind = SegmentKind.Text, Text = "test" }] }, token);
+        { Address = TestStore.Address(), Segments = [new MessageSegment { Kind = SegmentTypes.Text, Text = "test" }] }, token);
         Assert.Equal(DeliveryState.Failed, result.State);
         Assert.False(result.Recorded);
         Assert.Empty(fixture.Transport.Requests);
@@ -185,7 +185,7 @@ public sealed class RuntimeTests
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(token);
         await ExecuteSqlAsync(fixture, $"CREATE TRIGGER fail_receipt BEFORE UPDATE OF Delivery ON Messages WHEN NEW.Delivery={(int)DeliveryState.Confirmed} BEGIN SELECT RAISE(ABORT, 'synthetic'); END;", token);
         SendResult result = await fixture.Runtime.Sender.SendAsync(new OutgoingMessage
-        { Address = TestStore.Address(), Segments = [new MessageSegment { Kind = SegmentKind.Text, Text = "test" }] }, token);
+        { Address = TestStore.Address(), Segments = [new MessageSegment { Kind = SegmentTypes.Text, Text = "test" }] }, token);
         Assert.Equal(DeliveryState.Confirmed, result.State);
         Assert.False(result.Recorded);
         Assert.Single(fixture.Transport.Requests);

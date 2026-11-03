@@ -20,6 +20,8 @@
 **/npm-debug.log
 **/obj
 **/.context
+**/artifacts
+**/AGENTS.md
 **/data
 **/TestResults
 **/secrets.dev.yaml

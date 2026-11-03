@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Net;
 using System.Security.Cryptography;
+using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using Missili.Abstractions;
@@ -10,7 +11,7 @@ using Missili.Abstractions;
 namespace Missili.Kernel;
 
 /// <summary>宿主拥有的有界归档服务；插件只等待结果，不取得下载任务的取消权。</summary>
-public sealed class MediaArchive : IMediaStore, IAsyncDisposable
+public sealed class MediaArchive : IMediaStore, IMediaImporter, IAsyncDisposable
 {
     private readonly IInfrastructureStore _store;
     private readonly InfrastructureOptions _options;
@@ -18,6 +19,9 @@ public sealed class MediaArchive : IMediaStore, IAsyncDisposable
     private readonly TimeProvider _clock;
     private readonly string _root;
     private readonly HttpClient _http;
+    private readonly IAdapterRuntime? _adapters;
+    private readonly SemaphoreSlim _slots;
+    private readonly HashSet<Task> _imports = [];
     private readonly CancellationTokenSource _stop = new();
     private readonly Channel<byte> _wake = Channel.CreateBounded<byte>(1);
     private readonly Channel<MediaWork> _queue;
@@ -29,13 +33,15 @@ public sealed class MediaArchive : IMediaStore, IAsyncDisposable
     private string? _failure;
 
     /// <summary>创建专用 HTTP 客户端和有限队列，连接使用正常 TLS 与系统代理。</summary>
-    public MediaArchive(IInfrastructureStore store, InfrastructureOptions options, ILogger<MediaArchive> logger, TimeProvider? clock = null)
+    public MediaArchive(IInfrastructureStore store, InfrastructureOptions options, ILogger<MediaArchive> logger, TimeProvider? clock = null, IAdapterRuntime? adapters = null)
     {
         options.Validate();
         _store = store;
         _options = options;
         _logger = logger;
         _clock = clock ?? TimeProvider.System;
+        _adapters = adapters;
+        _slots = new SemaphoreSlim(options.DownloadConcurrency, options.DownloadConcurrency);
         _root = Path.GetFullPath(options.DataDirectory);
         SocketsHttpHandler handler = new()
         {
@@ -85,7 +91,7 @@ public sealed class MediaArchive : IMediaStore, IAsyncDisposable
             MediaWork work = await _store.GetMediaAsync(id, waitCancellation.Token).ConfigureAwait(false)
                 ?? throw new KeyNotFoundException("媒体引用不存在。");
             // 下载仍由宿主继续；此处仅等待当前调用所需的归档结果。
-            if (work.Status.State is MediaState.Pending or MediaState.Downloading or MediaState.Finalizing)
+            if (work.Status.State is MediaState.Pending or MediaState.Downloading or MediaState.Finalizing or MediaState.WaitingForAdapter)
             {
                 string? serviceError = Volatile.Read(ref _failure);
                 if (serviceError is not null) return new MediaReadResult { Status = work.Status, Error = serviceError };
@@ -144,26 +150,36 @@ public sealed class MediaArchive : IMediaStore, IAsyncDisposable
         {
             await foreach (MediaWork work in _queue.Reader.ReadAllAsync(_stop.Token).ConfigureAwait(false))
             {
+                long revision = _adapters?.Revision ?? 0;
+                await _slots.WaitAsync(_stop.Token).ConfigureAwait(false);
                 try
                 {
                     await ArchiveAsync(work).ConfigureAwait(false);
                     CompleteWaiters(work.Status.Id, null);
                 }
                 catch (OperationCanceledException) when (_stop.IsCancellationRequested) { break; }
+                catch (AdapterUnavailableException)
+                {
+                    await _store.WaitMediaForAdapterAsync(work.Status.Id, _stop.Token).ConfigureAwait(false);
+                    // 状态变化可能早于本次等待提交，此时主动重新领取，避免错过唯一唤醒。
+                    if (_adapters?.Revision != revision) { await _store.ResumeAdapterArchivesAsync(_stop.Token).ConfigureAwait(false); Notify(); }
+                }
                 catch (Exception exception)
                 {
                     _logger.LogWarning("媒体 {MediaId} 归档失败：{ErrorType}", work.Status.Id, exception.GetType().Name);
                     try
                     {
-                        await _store.FailMediaAsync(work.Status.Id, "原件获取失败：" + exception.GetType().Name, _stop.Token).ConfigureAwait(false);
+                        await _store.FailMediaAsync(work.Status.Id, exception is MediaAcquisitionException ? exception.Message : "原件获取失败：" + exception.GetType().Name, _stop.Token).ConfigureAwait(false);
                         CompleteWaiters(work.Status.Id, null);
                     }
                     catch (OperationCanceledException) when (_stop.IsCancellationRequested) { break; }
                     catch (Exception storageError) { FaultArchive(storageError); break; }
                 }
+                finally { _slots.Release(); }
             }
         }
         catch (OperationCanceledException) when (_stop.IsCancellationRequested) { }
+        catch (Exception exception) { FaultArchive(exception); }
     }
 
     /// <summary>恢复已登记文件操作，或复用稳定来源对应的归档工作。</summary>
@@ -181,6 +197,7 @@ public sealed class MediaArchive : IMediaStore, IAsyncDisposable
             if (reusable?.RelativePath is not null && File.Exists(PathFor(reusable.RelativePath)))
             {
                 await _store.CompleteMediaAsync(work.Status.Id, reusable.Status.ContentKey!, reusable.Status.Length!.Value, reusable.RelativePath, _stop.Token).ConfigureAwait(false);
+                await _store.SetMediaRepresentationAsync(work.Status.Id, reusable.Status.Representation, _stop.Token).ConfigureAwait(false);
                 return;
             }
         }
@@ -190,6 +207,7 @@ public sealed class MediaArchive : IMediaStore, IAsyncDisposable
         {
             BlobResult result = await pending.Value.ConfigureAwait(false);
             await _store.CompleteMediaAsync(work.Status.Id, result.Key, result.Length, result.Path, _stop.Token).ConfigureAwait(false);
+            await _store.SetMediaRepresentationAsync(work.Status.Id, result.Representation, _stop.Token).ConfigureAwait(false);
         }
         finally
         {
@@ -197,56 +215,111 @@ public sealed class MediaArchive : IMediaStore, IAsyncDisposable
         }
     }
 
-    /// <summary>下载到独占暂存文件，记录提交日志后才放置内容文件。</summary>
+    /// <summary>直接下载由宿主持有；平台解析只在必须借助适配器时取得其代次资格。</summary>
     private async Task<BlobResult> DownloadAsync(MediaWork work)
+    {
+        if (work.Source.Kind == "http") return await DownloadHttpAsync(work, work.Source, _stop.Token).ConfigureAwait(false);
+        if (_adapters is null || work.Source.AdapterId is null) throw new AdapterUnavailableException();
+        await using MediaSourceRead resolved = await _adapters.ResolveMediaAsync(work.Source, _stop.Token).ConfigureAwait(false);
+        await _store.SetMediaRepresentationAsync(work.Status.Id, resolved.Representation, _stop.Token).ConfigureAwait(false);
+        work = work with { Status = work.Status with { Representation = resolved.Representation } };
+        if (resolved.Redirect is not null)
+        {
+            resolved.Redirect.Validate();
+            if (resolved.Redirect.Kind != "http") throw new InvalidDataException("解析重定向只能为直接 HTTP 来源。");
+            return await DownloadHttpAsync(work, resolved.Redirect, _stop.Token).ConfigureAwait(false);
+        }
+        return await WriteBlobAsync(work, resolved.Content!, _stop.Token).ConfigureAwait(false);
+    }
+
+    /// <summary>响应头与正文使用独立期限，流式读取不设置整包总超时。</summary>
+    private async Task<BlobResult> DownloadHttpAsync(MediaWork work, MediaSource source, CancellationToken token)
+    {
+        using HttpRequestMessage request = new(HttpMethod.Get, source.Data.GetProperty("url").GetString());
+        request.Headers.AcceptEncoding.ParseAdd("identity");
+        HttpResponseMessage response;
+        using (CancellationTokenSource deadline = new(_options.HeadersTimeout, _clock))
+        using (CancellationTokenSource headers = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token, token))
+            response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, headers.Token).ConfigureAwait(false);
+        using (response)
+        {
+            response.EnsureSuccessStatusCode();
+            await using Stream content = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false);
+            return await WriteBlobAsync(work, content, token).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>插件提供的流在有限额度内写入，不通过伪造消息获得媒体引用。</summary>
+    public async Task<MediaStatus> ImportAsync(MediaKind kind, Stream content, JsonElement? representation = null, CancellationToken cancellationToken = default)
+    {
+        if (_pump is null) throw new InvalidOperationException("媒体服务尚未启动。");
+        if (!content.CanRead || !Enum.IsDefined(kind)) throw new ArgumentException("导入媒体种类或输入流无效。");
+        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _stop.Token);
+        TaskCompletionSource completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (_waitGate) { _stop.Token.ThrowIfCancellationRequested(); _imports.Add(completion.Task); }
+        bool acquired = false;
+        MediaWork? work = null;
+        try
+        {
+            await _slots.WaitAsync(linked.Token).ConfigureAwait(false);
+            acquired = true;
+            linked.Token.ThrowIfCancellationRequested();
+            work = await _store.CreateImportedMediaAsync(kind, representation?.Clone(), _clock.GetUtcNow(), linked.Token).ConfigureAwait(false);
+            await WriteBlobAsync(work, content, linked.Token).ConfigureAwait(false);
+            return (await _store.GetMediaAsync(work.Status.Id, linked.Token).ConfigureAwait(false))!.Status;
+        }
+        catch
+        {
+            if (work is not null)
+            {
+                MediaWork? current = await _store.GetMediaAsync(work.Status.Id, CancellationToken.None).ConfigureAwait(false);
+                if (current?.Status.State == MediaState.Downloading)
+                    await _store.FailMediaAsync(work.Status.Id, "媒体流导入未完成。", CancellationToken.None).ConfigureAwait(false);
+            }
+            throw;
+        }
+        finally { if (acquired) _slots.Release(); lock (_waitGate) { completion.TrySetResult(); _imports.Remove(completion.Task); } }
+    }
+
+    /// <summary>所有来源共用流式摘要和文件提交日志，暂存文件不会被当作可用原件。</summary>
+    private async Task<BlobResult> WriteBlobAsync(MediaWork work, Stream source, CancellationToken token)
     {
         string temporary = "media/staging/" + work.Status.Id.ToString("N") + ".part";
         bool prepared = false;
         try
         {
-            using HttpRequestMessage request = new(HttpMethod.Get, work.Source);
-            request.Headers.AcceptEncoding.ParseAdd("identity");
-            HttpResponseMessage response;
-            using (CancellationTokenSource deadline = new(_options.HeadersTimeout, _clock))
-            using (CancellationTokenSource headers = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token, _stop.Token))
-                response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, headers.Token).ConfigureAwait(false);
-            using (response)
+            long length = 0;
+            string contentKey;
+            using IncrementalHash digest = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            await using (FileStream destination = new(PathFor(temporary), FileMode.Create, FileAccess.Write, FileShare.None, 65536, FileOptions.Asynchronous))
             {
-                response.EnsureSuccessStatusCode();
-                long length = 0;
-                string contentKey;
-                using IncrementalHash digest = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-                await using (Stream source = await response.Content.ReadAsStreamAsync(_stop.Token).ConfigureAwait(false))
-                await using (FileStream destination = new(PathFor(temporary), FileMode.Create, FileAccess.Write, FileShare.None, 65536, FileOptions.Asynchronous))
+                byte[] buffer = ArrayPool<byte>.Shared.Rent(65536);
+                try
                 {
-                    byte[] buffer = ArrayPool<byte>.Shared.Rent(65536);
-                    try
+                    // 每次读取独立计时；没有整包总时限，也不积累数据块历史。
+                    while (true)
                     {
-                        // 每次读取独立计时；没有整包总时限，也不积累数据块历史。
-                        while (true)
-                        {
-                            using CancellationTokenSource deadline = new(_options.ReadIdleTimeout, _clock);
-                            using CancellationTokenSource read = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token, _stop.Token);
-                            int count = await source.ReadAsync(buffer.AsMemory(), read.Token).ConfigureAwait(false);
-                            if (count == 0) break;
-                            digest.AppendData(buffer, 0, count);
-                            await destination.WriteAsync(buffer.AsMemory(0, count), _stop.Token).ConfigureAwait(false);
-                            length += count;
-                        }
-                        await destination.FlushAsync(_stop.Token).ConfigureAwait(false);
-                        contentKey = Convert.ToHexStringLower(digest.GetHashAndReset());
+                        using CancellationTokenSource deadline = new(_options.ReadIdleTimeout, _clock);
+                        using CancellationTokenSource read = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token, token);
+                        int count = await source.ReadAsync(buffer.AsMemory(), read.Token).ConfigureAwait(false);
+                        if (count == 0) break;
+                        digest.AppendData(buffer, 0, count);
+                        await destination.WriteAsync(buffer.AsMemory(0, count), token).ConfigureAwait(false);
+                        length += count;
                     }
-                    finally { ArrayPool<byte>.Shared.Return(buffer, clearArray: true); }
+                    await destination.FlushAsync(token).ConfigureAwait(false);
+                    contentKey = Convert.ToHexStringLower(digest.GetHashAndReset());
                 }
-                if (length == 0) throw new InvalidDataException("媒体响应为空。");
-                string relative = "media/objects/" + contentKey[..2] + "/" + contentKey;
-                await _store.SetMediaFinalizingAsync(work.Status.Id, contentKey, length, temporary, relative, _stop.Token).ConfigureAwait(false);
-                prepared = true;
-                PlaceFile(temporary, relative, length);
-                // 发布共享下载结果之前先完成拥有者，后来的来源查询才能复用。
-                await _store.CompleteMediaAsync(work.Status.Id, contentKey, length, relative, _stop.Token).ConfigureAwait(false);
-                return new BlobResult { Key = contentKey, Length = length, Path = relative };
+                finally { ArrayPool<byte>.Shared.Return(buffer, clearArray: true); }
             }
+            if (length == 0) throw new InvalidDataException("媒体响应为空。");
+            string relative = "media/objects/" + contentKey[..2] + "/" + contentKey;
+            await _store.SetMediaFinalizingAsync(work.Status.Id, contentKey, length, temporary, relative, token).ConfigureAwait(false);
+            prepared = true;
+            PlaceFile(temporary, relative, length);
+            // 发布共享下载结果之前先完成拥有者，后来的来源查询才能复用。
+            await _store.CompleteMediaAsync(work.Status.Id, contentKey, length, relative, token).ConfigureAwait(false);
+            return new BlobResult { Key = contentKey, Length = length, Path = relative, Representation = work.Status.Representation };
         }
         finally
         {
@@ -308,6 +381,9 @@ public sealed class MediaArchive : IMediaStore, IAsyncDisposable
         _wake.Writer.TryComplete();
         if (_pump is not null) await _pump.ConfigureAwait(false);
         await Task.WhenAll(_workers).ConfigureAwait(false);
+        Task[] imports;
+        lock (_waitGate) imports = _imports.ToArray();
+        await Task.WhenAll(imports).ConfigureAwait(false);
     }
 
     /// <summary>回收本服务拥有的 HTTP 连接与取消源。</summary>
@@ -316,6 +392,7 @@ public sealed class MediaArchive : IMediaStore, IAsyncDisposable
         await StopAsync().ConfigureAwait(false);
         _http.Dispose();
         _stop.Dispose();
+        _slots.Dispose();
     }
 
     /// <summary>等待数量归零即移除，不累计已完成媒体的 Task。</summary>
@@ -331,5 +408,6 @@ public sealed class MediaArchive : IMediaStore, IAsyncDisposable
         public required string Key { get; init; }
         public required long Length { get; init; }
         public required string Path { get; init; }
+        public JsonElement? Representation { get; init; }
     }
 }

@@ -40,7 +40,7 @@ public sealed class MessageDispatcher
                 if (result.Unavailable)
                 {
                     await _sender.SendAsync(new OutgoingMessage
-                    { Address = original.Address, Segments = [new MessageSegment { Kind = SegmentKind.Text, Text = "插件正在重载或已停用，暂不可用。" }] }, cancellationToken).ConfigureAwait(false);
+                    { Address = original.Address, Segments = [new MessageSegment { Kind = SegmentTypes.Text, Text = "插件正在重载或已停用，暂不可用。" }] }, cancellationToken).ConfigureAwait(false);
                     return;
                 }
                 if (result.Matched) return;
@@ -125,7 +125,7 @@ public sealed class MessageDispatcher
     /// <summary>宿主根据声明的首个文本词识别明确命令，停用期间也能返回不可用。</summary>
     private static bool MatchesCommand(string command, MessageContext message)
     {
-        string text = string.Join(" ", message.CurrentContent.Where(segment => segment.Kind == SegmentKind.Text).Select(segment => segment.Text)).TrimStart();
+        string text = string.Join(" ", message.CurrentContent.Where(segment => segment.Kind == SegmentTypes.Text && segment.ParseState == SegmentParseState.Parsed).Select(segment => segment.Text)).TrimStart();
         return text.StartsWith(command, StringComparison.Ordinal) && (text.Length == command.Length || char.IsWhiteSpace(text[command.Length]));
     }
 

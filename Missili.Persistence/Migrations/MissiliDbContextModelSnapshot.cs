@@ -79,10 +79,54 @@ namespace Missili.Persistence.Migrations
                     b.ToTable("HookOrders", (string)null);
                 });
 
+            modelBuilder.Entity("Missili.Persistence.MediaBindingEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("ContentId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("MediaId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("MessageId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Ordinal")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Path")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("SegmentPosition")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MediaId");
+
+                    b.HasIndex("ContentId", "Path", "Ordinal")
+                        .IsUnique();
+
+                    b.HasIndex("MessageId", "SegmentPosition", "Ordinal")
+                        .IsUnique();
+
+                    b.ToTable("MediaBindings", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_MediaBindings_Owner", "(\"MessageId\" IS NOT NULL AND \"SegmentPosition\" IS NOT NULL AND \"ContentId\" IS NULL) OR (\"MessageId\" IS NULL AND \"SegmentPosition\" IS NULL AND \"ContentId\" IS NOT NULL)");
+                        });
+                });
+
             modelBuilder.Entity("Missili.Persistence.MediaEntity", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AdapterId")
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("Claimed")
@@ -106,7 +150,10 @@ namespace Missili.Persistence.Migrations
                     b.Property<string>("RelativePath")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("Source")
+                    b.Property<string>("RepresentationJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceJson")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
@@ -142,6 +189,9 @@ namespace Missili.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("CanonicalId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("ConversationId")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -164,6 +214,9 @@ namespace Missili.Persistence.Migrations
 
                     b.Property<int>("Direction")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("MetadataJson")
+                        .HasColumnType("TEXT");
 
                     b.Property<long?>("OccurredAt")
                         .HasColumnType("INTEGER");
@@ -193,6 +246,8 @@ namespace Missili.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CanonicalId");
+
                     b.HasIndex("AdapterId", "BotAccountId", "DeduplicationKey")
                         .IsUnique();
 
@@ -204,6 +259,10 @@ namespace Missili.Persistence.Migrations
                     b.HasIndex("SenderId", "ReceivedAt", "Id")
                         .HasDatabaseName("IX_Messages_Sender_Received");
 
+                    b.HasIndex("AdapterId", "BotAccountId", "PlatformId", "ConversationKind", "ConversationId", "Direction", "PlatformMessageId")
+                        .IsUnique()
+                        .HasFilter("\"PlatformMessageId\" IS NOT NULL AND \"CanonicalId\" IS NULL");
+
                     b.HasIndex("AdapterId", "BotAccountId", "PlatformId", "ConversationKind", "ConversationId", "OccurredAt", "Id")
                         .HasDatabaseName("IX_Messages_Conversation_Occurred");
 
@@ -211,6 +270,86 @@ namespace Missili.Persistence.Migrations
                         .HasDatabaseName("IX_Messages_Conversation_Received");
 
                     b.ToTable("Messages", (string)null);
+                });
+
+            modelBuilder.Entity("Missili.Persistence.PlatformEventEntity", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ActorId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AdapterId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("BotAccountId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Category")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ConversationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ConversationKind")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeduplicationKey")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("OccurredAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PayloadJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PlatformId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Processing")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("RecallsMessage")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("ReceivedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SubType")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TargetMessageId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TargetUserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AdapterId", "BotAccountId", "DeduplicationKey")
+                        .IsUnique();
+
+                    b.HasIndex("RunId", "Processing", "Id");
+
+                    b.HasIndex("Type", "ReceivedAt", "Id");
+
+                    b.HasIndex("AdapterId", "BotAccountId", "ConversationKind", "ConversationId", "ReceivedAt", "Id");
+
+                    b.HasIndex("AdapterId", "BotAccountId", "PlatformId", "ConversationKind", "ConversationId", "TargetMessageId", "RecallsMessage");
+
+                    b.ToTable("PlatformEvents", (string)null);
                 });
 
             modelBuilder.Entity("Missili.Persistence.SegmentEntity", b =>
@@ -221,22 +360,87 @@ namespace Missili.Persistence.Migrations
                     b.Property<int>("Position")
                         .HasColumnType("INTEGER");
 
-                    b.Property<int>("Kind")
+                    b.Property<Guid?>("ContentId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ParseError")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ParseState")
                         .HasColumnType("INTEGER");
 
-                    b.Property<Guid?>("MediaId")
+                    b.Property<string>("PayloadJson")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Text")
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("Version")
+                        .HasColumnType("INTEGER");
+
                     b.HasKey("MessageId", "Position");
 
-                    b.HasIndex("MediaId");
+                    b.HasIndex("ContentId");
 
                     b.HasIndex("Kind", "MessageId");
 
                     b.ToTable("MessageSegments", (string)null);
+                });
+
+            modelBuilder.Entity("Missili.Persistence.StructuredContentEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AdapterId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CheckpointJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Claimed")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("IssuesJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NodesJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SourceJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("State")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SourceKey")
+                        .IsUnique();
+
+                    b.HasIndex("Claimed", "State", "CreatedAt");
+
+                    b.ToTable("StructuredContents", (string)null);
                 });
 
             modelBuilder.Entity("Missili.Persistence.TranscriptionEntity", b =>
@@ -283,11 +487,38 @@ namespace Missili.Persistence.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("Missili.Persistence.SegmentEntity", b =>
+            modelBuilder.Entity("Missili.Persistence.MediaBindingEntity", b =>
                 {
+                    b.HasOne("Missili.Persistence.StructuredContentEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ContentId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
                     b.HasOne("Missili.Persistence.MediaEntity", null)
                         .WithMany()
                         .HasForeignKey("MediaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Missili.Persistence.SegmentEntity", null)
+                        .WithMany("Media")
+                        .HasForeignKey("MessageId", "SegmentPosition")
+                        .OnDelete(DeleteBehavior.Cascade);
+                });
+
+            modelBuilder.Entity("Missili.Persistence.MessageEntity", b =>
+                {
+                    b.HasOne("Missili.Persistence.MessageEntity", null)
+                        .WithMany()
+                        .HasForeignKey("CanonicalId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("Missili.Persistence.SegmentEntity", b =>
+                {
+                    b.HasOne("Missili.Persistence.StructuredContentEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ContentId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("Missili.Persistence.MessageEntity", null)
@@ -314,6 +545,11 @@ namespace Missili.Persistence.Migrations
             modelBuilder.Entity("Missili.Persistence.MessageEntity", b =>
                 {
                     b.Navigation("Segments");
+                });
+
+            modelBuilder.Entity("Missili.Persistence.SegmentEntity", b =>
+                {
+                    b.Navigation("Media");
                 });
 #pragma warning restore 612, 618
         }

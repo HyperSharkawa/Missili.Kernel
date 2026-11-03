@@ -50,7 +50,7 @@ internal sealed class TestStore : IAsyncDisposable
         SenderId = "user",
         DeduplicationKey = key,
         OccurredAt = Now,
-        Segments = [new IncomingSegment { Kind = SegmentKind.Text, Text = text }]
+        Segments = [new IncomingSegment { Kind = SegmentTypes.Text, Text = text }]
     };
 
     /// <summary>构造无需真实下载即可测试引用存储的合成媒体输入。</summary>
@@ -59,7 +59,7 @@ internal sealed class TestStore : IAsyncDisposable
         Address = Address(),
         SenderId = "user",
         Segments =
-        [new IncomingSegment { Kind = SegmentKind.Image, Source = new MediaSource { Uri = uri, StableKey = sourceKey } }]
+        [new IncomingSegment { Kind = SegmentTypes.Image, Media = [new IncomingMedia { Kind = MediaKind.Image, Source = MediaSource.Http(uri, sourceKey) }] }]
     };
 
     /// <summary>查询请求显式表达时间和可见性，避免测试隐式默认行为。</summary>

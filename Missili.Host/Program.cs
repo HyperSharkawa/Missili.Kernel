@@ -1,10 +1,11 @@
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Missili.Abstractions;
 using Missili.Kernel;
 
 namespace Missili.Host;
 
-/// <summary>基础设施宿主入口；本阶段不注册真实平台或管理 API。</summary>
+/// <summary>基础设施宿主入口；平台由明确启用的动态插件接入。</summary>
 public static class Program
 {
     /// <summary>构建并运行 Web 宿主，退出时异步释放基础设施。</summary>
@@ -23,7 +24,7 @@ public static class Program
         options.DataDirectory = Path.GetFullPath(options.DataDirectory, builder.Environment.ContentRootPath);
         options.Validate();
         builder.Services.AddSingleton(options);
-        builder.Services.AddSingleton(TimeProvider.System);
+        builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.AddSingleton(services => InfrastructureFactory.Create(
             services.GetRequiredService<InfrastructureOptions>(), services.GetRequiredService<ILoggerFactory>(),
             services.GetServices<IMessageTransport>(), services.GetRequiredService<TimeProvider>()));
@@ -33,9 +34,11 @@ public static class Program
         builder.Services.ConfigureHttpJsonOptions(json => json.SerializerOptions.TypeInfoResolverChain.Insert(0, HostJsonContext.Default));
         WebApplication app = builder.Build();
         if (app.Environment.IsDevelopment()) app.MapOpenApi();
+        app.UseWebSockets();
         app.UseAuthorization();
         app.MapGet("/health/live", Live);
         app.MapGet("/health/ready", ReadyAsync);
+        app.Map("/adapters/{adapterId}/ws", AdapterWebSocketEndpoint.HandleAsync);
         return app;
     }
 

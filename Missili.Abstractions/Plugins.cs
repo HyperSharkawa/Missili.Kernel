@@ -9,6 +9,7 @@ public static class MessageHooks
 {
     public const string Received = "message.received";
     public const string Sent = "message.sent";
+    public const string PlatformEvent = "platform.event";
 }
 
 /// <summary>三种调用阶段，用户排序不能跨阶段改变传播语义。</summary>
@@ -62,6 +63,8 @@ public interface IHandlerRegistry
     void RegisterListener(string hookId, string id, string name, string description, int priority, Func<MessageContext, CancellationToken, Task> handler);
     /// <summary>注册先匹配再执行的文本命令；匹配成功即完成接管。</summary>
     void RegisterCommand(string id, string name, string description, string commandName, int priority, Func<MessageContext, CancellationToken, Task> handler, Func<MessageContext, bool>? matches = null);
+    /// <summary>注册独立平台业务事件监听器，不将通知和请求伪装成聊天消息。</summary>
+    void RegisterEventListener(string id, string name, string description, int priority, Func<PlatformEventSnapshot, CancellationToken, Task> handler);
 }
 
 /// <summary>插件后台工作与资源的生命周期登记。</summary>
@@ -69,6 +72,8 @@ public interface IPluginTaskScope
 {
     /// <summary>先登记后启动任务，停止时请求取消并等待任务实际退出。</summary>
     Task Run(Func<CancellationToken, Task> operation);
+    /// <summary>先登记工作，初始化与注册发布成功后才启动网络等运行任务。</summary>
+    Task RunAfterActivation(Func<CancellationToken, Task> operation);
     /// <summary>取得资源所有权，返回可提前释放并注销登记的句柄。</summary>
     IAsyncDisposable Track(IAsyncDisposable resource);
 }
@@ -79,10 +84,19 @@ public interface IPluginContext
     string PluginId { get; }
     JsonElement Configuration { get; }
     ILogger Logger { get; }
+    TimeProvider Clock { get; }
     IMessageHistory History { get; }
+    IMessageIngress Ingress { get; }
+    IPlatformEventIngress EventIngress { get; }
+    IPlatformEventHistory Events { get; }
     IMediaStore Media { get; }
+    IMediaImporter MediaImporter { get; }
+    IStructuredContentStore Contents { get; }
     IMediaTranscriptionStore Transcriptions { get; }
     IMessageSender Sender { get; }
+    ISendReceiptSink Receipts { get; }
+    IPlatformOperations Platform { get; }
+    IAdapterRegistry Adapters { get; }
     IHandlerRegistry Handlers { get; }
     IPluginTaskScope Tasks { get; }
 }
@@ -139,6 +153,8 @@ public interface IHandlerLease : IDisposable
     bool Matches(MessageContext message);
     /// <summary>执行已登记处理器，调用者负责捕获插件业务异常。</summary>
     Task<HandlerResult> InvokeAsync(MessageContext message, CancellationToken cancellationToken);
+    /// <summary>执行平台事件监听，事件类型与消息上下文保持独立。</summary>
+    Task InvokeEventAsync(PlatformEventSnapshot platformEvent, CancellationToken cancellationToken);
 }
 
 /// <summary>只供宿主实现使用的插件目录与原子调用入口。</summary>

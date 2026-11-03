@@ -28,11 +28,11 @@ public sealed class Entry : IPlugin
     /// <summary>精确匹配任一文本段；不访问或等待同条消息中的媒体。</summary>
     private async Task ReplyAsync(MessageContext message, CancellationToken cancellationToken)
     {
-        if (!message.CurrentContent.Any(segment => segment.Kind == SegmentKind.Text && string.Equals(segment.Text, _keyword, StringComparison.Ordinal))) return;
+        if (!message.CurrentContent.Any(segment => segment.Kind == SegmentTypes.Text && segment.ParseState == SegmentParseState.Parsed && string.Equals(segment.Text, _keyword, StringComparison.Ordinal))) return;
         await _context!.Sender.SendAsync(new OutgoingMessage
         {
             Address = message.OriginalMessage.Address,
-            Segments = [new MessageSegment { Kind = SegmentKind.Text, Text = _reply }]
+            Segments = [new MessageSegment { Kind = SegmentTypes.Text, Text = _reply }]
         }, cancellationToken);
     }
 }

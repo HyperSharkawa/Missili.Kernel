@@ -5,8 +5,12 @@
   <Project Path="Missili.Matrix/Missili.Matrix.csproj" />
   <Project Path="Missili.Nexus/Missili.Nexus.csproj" />
   <Project Path="Missili.Persistence/Missili.Persistence.csproj" />
+  <Project Path="Missili.Adapters.OneBot/Missili.Adapters.OneBot.csproj" />
   <Folder Name="/tests/">
     <Project Path="tests/Missili.Tests/Missili.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Missili.OneBot.Mock/Missili.OneBot.Mock.csproj" />
   </Folder>
   <Folder Name="/tests/fixtures/">
     <Project Path="tests/Fixtures/DependencyV1/DependencyV1.csproj" />

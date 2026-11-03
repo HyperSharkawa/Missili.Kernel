@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Text.Json;
 
 namespace Missili.Abstractions;
 
@@ -7,6 +8,10 @@ public sealed record OutgoingMessage
 {
     public required MessageAddress Address { get; init; }
     public required ImmutableArray<MessageSegment> Segments { get; init; }
+    public JsonElement? Metadata { get; init; }
+
+    /// <summary>复制 JSON 所有权，发送队列不引用调用者的文档。</summary>
+    public OutgoingMessage Freeze() => this with { Metadata = Metadata?.Clone(), Segments = Segments.Select(item => item.Freeze()).ToImmutableArray() };
 }
 
 /// <summary>平台调用结果，未知状态不自动重发。</summary>
@@ -26,7 +31,7 @@ public sealed record SendResult
     public string? Error { get; init; }
 }
 
-/// <summary>平台传输边界，本阶段仅在测试中提供实现。</summary>
+/// <summary>固定平台传输边界；动态适配器经加载代次路由接入同一发送服务。</summary>
 public interface IMessageTransport
 {
     string AdapterId { get; }

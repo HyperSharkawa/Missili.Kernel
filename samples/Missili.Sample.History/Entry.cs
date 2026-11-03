@@ -35,7 +35,7 @@ public sealed class Entry : IPlugin
         await _context.Sender.SendAsync(new OutgoingMessage
         {
             Address = message.OriginalMessage.Address,
-            Segments = [new MessageSegment { Kind = SegmentKind.Text, Text = $"读取到 {page.Messages.Length} 条会话历史。" }]
+            Segments = [new MessageSegment { Kind = SegmentTypes.Text, Text = $"读取到 {page.Messages.Length} 条会话历史。" }]
         }, cancellationToken);
     }
 }

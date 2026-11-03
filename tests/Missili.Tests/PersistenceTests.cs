@@ -24,7 +24,7 @@ public sealed class PersistenceTests
         {
             Address = TestStore.Address(),
             SenderId = "selected",
-            SegmentKind = SegmentKind.Image,
+            SegmentType = SegmentTypes.Image,
             Direction = MessageDirection.Incoming,
             Time = HistoryTime.Occurred,
             From = TestStore.Now,
@@ -134,7 +134,7 @@ public sealed class PersistenceTests
     {
         await using TestStore fixture = await TestStore.CreateAsync();
         ReceiveReceipt input = await fixture.Store.AppendAsync(TestStore.MediaMessage(new Uri("http://127.0.0.1/media")), TestStore.Now, fixture.RunId, TestContext.Current.CancellationToken);
-        Guid id = input.Message!.Segments[0].MediaId!.Value;
+        Guid id = input.Message!.Segments[0].MediaIds[0];
         await fixture.Store.ClaimMediaAsync(1, TestContext.Current.CancellationToken);
         string key = new('a', 64);
         await fixture.Store.CompleteMediaAsync(id, key, 3, "media/objects/aaa", TestContext.Current.CancellationToken);
@@ -157,7 +157,7 @@ public sealed class PersistenceTests
         await fixture.Store.ClaimMediaAsync(10, TestContext.Current.CancellationToken);
         await fixture.Store.InitializeAsync(Guid.NewGuid(), TestContext.Current.CancellationToken);
         Assert.Equal(ProcessingState.Interrupted, (await fixture.Store.GetAsync(message.Message!.Id, TestContext.Current.CancellationToken))!.Processing);
-        Assert.Equal(MediaState.Pending, (await fixture.Store.GetMediaAsync(message.Message.Segments[0].MediaId!.Value, TestContext.Current.CancellationToken))!.Status.State);
+        Assert.Equal(MediaState.Pending, (await fixture.Store.GetMediaAsync(message.Message.Segments[0].MediaIds[0], TestContext.Current.CancellationToken))!.Status.State);
         Assert.Empty(await fixture.Store.ClaimMessagesAsync(Guid.NewGuid(), 10, TestContext.Current.CancellationToken));
     }
 

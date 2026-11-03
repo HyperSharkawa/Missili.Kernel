@@ -116,7 +116,7 @@ public sealed class PluginManager : IPluginRuntime, IAsyncDisposable
         try
         {
             await generation.InitializeAsync(token).ConfigureAwait(false);
-            lock (_gate) { slot.Known = generation.Capture(); slot.Last = generation.Status(); }
+            lock (_gate) { generation.Activate(); slot.Known = generation.Capture(); slot.Last = generation.Status(); }
             return generation.Status();
         }
         catch (Exception exception)

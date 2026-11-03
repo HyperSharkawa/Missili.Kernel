@@ -115,6 +115,7 @@ public sealed class HookOrderService : IHookOrderService
     /// <summary>只有实际存在的钩子和阶段可以编排。</summary>
     private static void ValidateHook(string hookId, HandlerKind kind)
     {
-        if (hookId is not (MessageHooks.Received or MessageHooks.Sent) || !Enum.IsDefined(kind)) throw new ArgumentException("钩子或执行阶段无效。");
+        if (hookId is not (MessageHooks.Received or MessageHooks.Sent or MessageHooks.PlatformEvent) || !Enum.IsDefined(kind)
+            || (hookId == MessageHooks.PlatformEvent && kind != HandlerKind.Listener)) throw new ArgumentException("钩子或执行阶段无效。");
     }
 }

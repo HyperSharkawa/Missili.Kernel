@@ -13,6 +13,8 @@
     <ProjectReference Include="../../samples/Missili.Sample.Keyword/Missili.Sample.Keyword.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../../samples/Missili.Sample.History/Missili.Sample.History.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../../Missili.Host/Missili.Host.csproj" />
+    <ProjectReference Include="../../tools/Missili.OneBot.Mock/Missili.OneBot.Mock.csproj" />
+    <ProjectReference Include="../../Missili.Adapters.OneBot/Missili.Adapters.OneBot.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../../Missili.Matrix/Missili.Matrix.csproj" />
     <ProjectReference Include="../../Missili.Nexus/Missili.Nexus.csproj" />
     <ProjectReference Include="../../Missili.Persistence/Missili.Persistence.csproj" />
@@ -30,10 +32,12 @@
       <FixtureV2 Include="../Fixtures/PluginV2/bin/$(Configuration)/net10.0/**/*" />
       <KeywordSample Include="../../samples/Missili.Sample.Keyword/bin/$(Configuration)/net10.0/**/*" />
       <HistorySample Include="../../samples/Missili.Sample.History/bin/$(Configuration)/net10.0/**/*" />
+      <OneBotPlugin Include="../../Missili.Adapters.OneBot/bin/$(Configuration)/net10.0/**/*" />
     </ItemGroup>
     <Copy SourceFiles="@(FixtureV1)" DestinationFiles="@(FixtureV1->'$(OutDir)Fixtures/v1/%(RecursiveDir)%(Filename)%(Extension)')" />
     <Copy SourceFiles="@(FixtureV2)" DestinationFiles="@(FixtureV2->'$(OutDir)Fixtures/v2/%(RecursiveDir)%(Filename)%(Extension)')" />
     <Copy SourceFiles="@(KeywordSample)" DestinationFiles="@(KeywordSample->'$(OutDir)Samples/keyword/%(RecursiveDir)%(Filename)%(Extension)')" />
     <Copy SourceFiles="@(HistorySample)" DestinationFiles="@(HistorySample->'$(OutDir)Samples/history/%(RecursiveDir)%(Filename)%(Extension)')" />
+    <Copy SourceFiles="@(OneBotPlugin)" DestinationFiles="@(OneBotPlugin->'$(OutDir)Adapters/onebot/%(RecursiveDir)%(Filename)%(Extension)')" />
   </Target>
 </Project>

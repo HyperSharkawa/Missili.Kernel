@@ -12,8 +12,14 @@
     <ProjectReference Include="../Missili.Matrix/Missili.Matrix.csproj" />
     <ProjectReference Include="../Missili.Nexus/Missili.Nexus.csproj" />
     <ProjectReference Include="../Missili.Persistence/Missili.Persistence.csproj" />
+    <ProjectReference Include="../Missili.Adapters.OneBot/Missili.Adapters.OneBot.csproj" ReferenceOutputAssembly="false" Private="false" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
     <PackageReference Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" Version="1.24.2-preview.1" />
   </ItemGroup>
+
+  <Target Name="PublishOfficialAdapters" AfterTargets="Publish">
+    <MSBuild Projects="../Missili.Adapters.OneBot/Missili.Adapters.OneBot.csproj" Targets="Publish"
+      Properties="Configuration=$(Configuration);PublishDir=$([System.IO.Path]::GetFullPath('$(PublishDir)', '$(MSBuildProjectDirectory)'))/plugins/onebot/;UseAppHost=false" />
+  </Target>
 
 </Project>

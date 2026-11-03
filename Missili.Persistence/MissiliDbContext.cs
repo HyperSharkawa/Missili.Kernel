@@ -17,6 +17,9 @@ public sealed class MissiliDbContext : DbContext
     public DbSet<TranscriptionEntity> MediaTranscriptions => Set<TranscriptionEntity>();
     public DbSet<HookOrderEntity> HookOrders => Set<HookOrderEntity>();
     public DbSet<HookEntryEntity> HookOrderEntries => Set<HookEntryEntity>();
+    public DbSet<MediaBindingEntity> MediaBindings => Set<MediaBindingEntity>();
+    public DbSet<StructuredContentEntity> StructuredContents => Set<StructuredContentEntity>();
+    public DbSet<PlatformEventEntity> PlatformEvents => Set<PlatformEventEntity>();
 
     /// <summary>声明实际查询需要的索引、外键和并发约束。</summary>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -31,6 +34,9 @@ public sealed class MissiliDbContext : DbContext
             entity.HasIndex(item => new { item.SenderId, item.ReceivedAt, item.Id }).HasDatabaseName("IX_Messages_Sender_Received");
             entity.HasIndex(item => new { item.SenderId, item.OccurredAt, item.Id }).HasDatabaseName("IX_Messages_Sender_Occurred");
             entity.HasIndex(item => new { item.RunId, item.Processing, item.Id });
+            entity.HasIndex(item => new { item.AdapterId, item.BotAccountId, item.PlatformId, item.ConversationKind, item.ConversationId, item.Direction, item.PlatformMessageId })
+                .IsUnique().HasFilter("\"PlatformMessageId\" IS NOT NULL AND \"CanonicalId\" IS NULL");
+            entity.HasOne<MessageEntity>().WithMany().HasForeignKey(item => item.CanonicalId).OnDelete(DeleteBehavior.Restrict);
             entity.HasMany(item => item.Segments).WithOne().HasForeignKey(item => item.MessageId).OnDelete(DeleteBehavior.Cascade);
         });
         modelBuilder.Entity<SegmentEntity>(entity =>
@@ -38,7 +44,36 @@ public sealed class MissiliDbContext : DbContext
             entity.ToTable("MessageSegments");
             entity.HasKey(item => new { item.MessageId, item.Position });
             entity.HasIndex(item => new { item.Kind, item.MessageId });
+            entity.HasMany(item => item.Media).WithOne().HasForeignKey(item => new { item.MessageId, item.SegmentPosition }).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<StructuredContentEntity>().WithMany().HasForeignKey(item => item.ContentId).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<MediaBindingEntity>(entity =>
+        {
+            entity.ToTable("MediaBindings", table => table.HasCheckConstraint("CK_MediaBindings_Owner",
+                "(\"MessageId\" IS NOT NULL AND \"SegmentPosition\" IS NOT NULL AND \"ContentId\" IS NULL) OR (\"MessageId\" IS NULL AND \"SegmentPosition\" IS NULL AND \"ContentId\" IS NOT NULL)"));
+            entity.HasKey(item => item.Id);
+            entity.HasIndex(item => new { item.MessageId, item.SegmentPosition, item.Ordinal }).IsUnique();
+            entity.HasIndex(item => new { item.ContentId, item.Path, item.Ordinal }).IsUnique();
             entity.HasOne<MediaEntity>().WithMany().HasForeignKey(item => item.MediaId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<StructuredContentEntity>().WithMany().HasForeignKey(item => item.ContentId).OnDelete(DeleteBehavior.Cascade);
+        });
+        modelBuilder.Entity<StructuredContentEntity>(entity =>
+        {
+            entity.ToTable("StructuredContents");
+            entity.HasKey(item => item.Id);
+            entity.HasIndex(item => item.SourceKey).IsUnique();
+            entity.HasIndex(item => new { item.Claimed, item.State, item.CreatedAt });
+            entity.Property(item => item.Revision).IsConcurrencyToken();
+        });
+        modelBuilder.Entity<PlatformEventEntity>(entity =>
+        {
+            entity.ToTable("PlatformEvents");
+            entity.HasKey(item => item.Id);
+            entity.HasIndex(item => new { item.AdapterId, item.BotAccountId, item.DeduplicationKey }).IsUnique();
+            entity.HasIndex(item => new { item.AdapterId, item.BotAccountId, item.ConversationKind, item.ConversationId, item.ReceivedAt, item.Id });
+            entity.HasIndex(item => new { item.Type, item.ReceivedAt, item.Id });
+            entity.HasIndex(item => new { item.RunId, item.Processing, item.Id });
+            entity.HasIndex(item => new { item.AdapterId, item.BotAccountId, item.PlatformId, item.ConversationKind, item.ConversationId, item.TargetMessageId, item.RecallsMessage });
         });
         modelBuilder.Entity<MediaEntity>(entity =>
         {
@@ -96,6 +131,8 @@ public sealed class MessageEntity
     public DeliveryState Delivery { get; set; }
     public string? DeliveryError { get; set; }
     public Guid RunId { get; set; }
+    public long? CanonicalId { get; set; }
+    public string? MetadataJson { get; set; }
     public List<SegmentEntity> Segments { get; set; } = [];
 }
 
@@ -104,17 +141,24 @@ public sealed class SegmentEntity
 {
     public long MessageId { get; set; }
     public int Position { get; set; }
-    public SegmentKind Kind { get; set; }
+    public string Kind { get; set; } = "";
+    public int Version { get; set; } = 1;
     public string? Text { get; set; }
-    public Guid? MediaId { get; set; }
+    public string? PayloadJson { get; set; }
+    public SegmentParseState ParseState { get; set; }
+    public string? ParseError { get; set; }
+    public Guid? ContentId { get; set; }
+    public List<MediaBindingEntity> Media { get; set; } = [];
 }
 
 /// <summary>独立媒体引用及可恢复的文件提交状态。</summary>
 public sealed class MediaEntity
 {
     public Guid Id { get; set; }
-    public SegmentKind Kind { get; set; }
-    public string Source { get; set; } = "";
+    public MediaKind Kind { get; set; }
+    public string SourceJson { get; set; } = "";
+    public string? AdapterId { get; set; }
+    public string? RepresentationJson { get; set; }
     public string? SourceKey { get; set; }
     public MediaState State { get; set; }
     public long CreatedAt { get; set; }
@@ -124,6 +168,58 @@ public sealed class MediaEntity
     public string? TemporaryPath { get; set; }
     public string? RelativePath { get; set; }
     public string? Error { get; set; }
+}
+
+/// <summary>直接消息和结构化内容共用的媒体位置关联，不依赖具体平台表。</summary>
+public sealed class MediaBindingEntity
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public long? MessageId { get; set; }
+    public int? SegmentPosition { get; set; }
+    public Guid? ContentId { get; set; }
+    public string Path { get; set; } = "";
+    public int Ordinal { get; set; }
+    public Guid MediaId { get; set; }
+}
+
+/// <summary>可恢复的结构化内容文档，正文与媒体关联分开存放。</summary>
+public sealed class StructuredContentEntity
+{
+    public Guid Id { get; set; }
+    public string SourceKey { get; set; } = "";
+    public string SourceJson { get; set; } = "";
+    public string AdapterId { get; set; } = "";
+    public ContentState State { get; set; }
+    public bool Claimed { get; set; }
+    public long CreatedAt { get; set; }
+    public string NodesJson { get; set; } = "[]";
+    public string IssuesJson { get; set; } = "[]";
+    public string? CheckpointJson { get; set; }
+    public long Revision { get; set; }
+}
+
+/// <summary>平台通知和请求的持久化信封，独立于聊天消息。</summary>
+public sealed class PlatformEventEntity
+{
+    public long Id { get; set; }
+    public string AdapterId { get; set; } = "";
+    public string PlatformId { get; set; } = "";
+    public string BotAccountId { get; set; } = "";
+    public string Type { get; set; } = "";
+    public string? SubType { get; set; }
+    public PlatformEventCategory Category { get; set; }
+    public string? ConversationKind { get; set; }
+    public string? ConversationId { get; set; }
+    public string? ActorId { get; set; }
+    public string? TargetUserId { get; set; }
+    public string? TargetMessageId { get; set; }
+    public string? DeduplicationKey { get; set; }
+    public long? OccurredAt { get; set; }
+    public long ReceivedAt { get; set; }
+    public string? PayloadJson { get; set; }
+    public bool RecallsMessage { get; set; }
+    public ProcessingState Processing { get; set; }
+    public Guid RunId { get; set; }
 }
 
 /// <summary>按内容共享的原件元数据。</summary>

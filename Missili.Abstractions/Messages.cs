@@ -1,9 +1,20 @@
 using System.Collections.Immutable;
+using System.Text.Json;
 
 namespace Missili.Abstractions;
 
-/// <summary>与具体平台协议无关的消息段种类。</summary>
-public enum SegmentKind { Text, Image, Audio, Video }
+/// <summary>常用段的稳定标识；扩展段使用自己的命名空间，不需要修改枚举或数据表。</summary>
+public static class SegmentTypes
+{
+    public const string Text = "text", Image = "image", Audio = "audio", Video = "video";
+    public const string Mention = "mention", Reply = "reply", Share = "share", Location = "location", Forward = "forward";
+    public const string Face = "qq.face", Contact = "qq.contact", Music = "qq.music", Rps = "qq.rps", Dice = "qq.dice";
+    public const string Poke = "qq.poke", Shake = "qq.shake", Anonymous = "qq.anonymous";
+    public const string Json = "onebot11.json", Xml = "onebot11.xml";
+}
+
+/// <summary>区分已解释、未知扩展和已知格式错误，不通过文本占位掩盖原始数据。</summary>
+public enum SegmentParseState { Parsed, Unrecognized, Invalid }
 
 /// <summary>区分收到的消息与宿主发送意图。</summary>
 public enum MessageDirection { Incoming, Outgoing }
@@ -12,7 +23,7 @@ public enum MessageDirection { Incoming, Outgoing }
 public enum ProcessingState { Pending, Running, Finished, Interrupted }
 
 /// <summary>发送结果独立于插件执行结果，未知结果不能自动重发。</summary>
-public enum DeliveryState { NotApplicable, Pending, Sending, Confirmed, Failed, Unknown, Cancelled }
+public enum DeliveryState { NotApplicable, Pending, Sending, Confirmed, Failed, Unknown, Cancelled, Accepted }
 
 /// <summary>历史时间筛选依据。</summary>
 public enum HistoryTime { Received, Occurred }
@@ -40,27 +51,41 @@ public sealed record MessageAddress
     }
 }
 
-/// <summary>媒体获取描述；稳定来源键由适配器提供，不根据临时地址猜测。</summary>
-public sealed record MediaSource
-{
-    public required Uri Uri { get; init; }
-    public string? StableKey { get; init; }
-}
-
 /// <summary>接收时的消息段；媒体内容由宿主另行归档。</summary>
 public sealed record IncomingSegment
 {
-    public required SegmentKind Kind { get; init; }
+    public required string Kind { get; init; }
+    public int Version { get; init; } = 1;
     public string? Text { get; init; }
-    public MediaSource? Source { get; init; }
+    public JsonElement? Payload { get; init; }
+    public SegmentParseState ParseState { get; init; }
+    public string? ParseError { get; init; }
+    public ImmutableArray<IncomingMedia> Media { get; init; } = [];
+    public ContentSource? Content { get; init; }
+
+    /// <summary>复制 JSON 所有权，调用者释放原文档后排队消息仍有效。</summary>
+    public IncomingSegment Freeze() => this with
+    {
+        Payload = Payload?.Clone(),
+        Media = Media.Select(item => item with { Source = item.Source.Freeze() }).ToImmutableArray(),
+        Content = Content?.Freeze()
+    };
 }
 
 /// <summary>持久化后的不可变消息段，媒体通过稳定引用访问。</summary>
 public sealed record MessageSegment
 {
-    public required SegmentKind Kind { get; init; }
+    public required string Kind { get; init; }
+    public int Version { get; init; } = 1;
     public string? Text { get; init; }
-    public Guid? MediaId { get; init; }
+    public JsonElement? Payload { get; init; }
+    public SegmentParseState ParseState { get; init; }
+    public string? ParseError { get; init; }
+    public ImmutableArray<Guid> MediaIds { get; init; } = [];
+    public Guid? ContentId { get; init; }
+
+    /// <summary>复制扩展数据，快照不会借用调用者的 JSON 文档。</summary>
+    public MessageSegment Freeze() => this with { Payload = Payload?.Clone() };
 }
 
 /// <summary>平台适配器向内核提交的通用消息，不包含任何 QQ 专有字段。</summary>
@@ -72,6 +97,7 @@ public sealed record IncomingMessage
     public string? PlatformMessageId { get; init; }
     public string? DeduplicationKey { get; init; }
     public DateTimeOffset? OccurredAt { get; init; }
+    public JsonElement? Metadata { get; init; }
     public required ImmutableArray<IncomingSegment> Segments { get; init; }
 
     /// <summary>在进入持久化队列前校验消息及每个段的互斥载荷。</summary>
@@ -83,20 +109,15 @@ public sealed record IncomingMessage
         if (Segments.IsDefaultOrEmpty) throw new ArgumentException("消息必须至少包含一个消息段。");
         foreach (IncomingSegment segment in Segments)
         {
-            if (!Enum.IsDefined(segment.Kind)) throw new ArgumentException("不支持的消息段类型。");
-            // 文本与原件来源互斥，避免存入无法解释的混合载荷。
-            if (segment.Kind == SegmentKind.Text)
-            {
-                if (segment.Text is null || segment.Source is not null) throw new ArgumentException("文本段载荷无效。");
-            }
-            else
-            {
-                if (segment.Text is not null || segment.Source is null || !segment.Source.Uri.IsAbsoluteUri ||
-                    segment.Source.Uri.Scheme is not ("http" or "https"))
-                    throw new ArgumentException("媒体段必须提供 HTTP(S) 来源。");
-            }
+            ContentValidation.ValidateSegment(segment.Kind, segment.Version, segment.Text, segment.Payload, segment.ParseState);
+            if (segment.Media.IsDefault) throw new ArgumentException("媒体集合未初始化。");
+            foreach (IncomingMedia media in segment.Media) { media.Source.Validate(); if (!Enum.IsDefined(media.Kind)) throw new ArgumentException("媒体种类无效。"); }
+            segment.Content?.Validate();
         }
     }
+
+    /// <summary>在跨异步接收边界前取得完整载荷所有权。</summary>
+    public IncomingMessage Freeze() => this with { Metadata = Metadata?.Clone(), Segments = Segments.Select(item => item.Freeze()).ToImmutableArray() };
 }
 
 /// <summary>与实体跟踪脱离的历史快照，原始内容不会被插件修改。</summary>
@@ -113,6 +134,7 @@ public sealed record MessageSnapshot
     public bool Deleted { get; init; }
     public ProcessingState Processing { get; init; }
     public DeliveryState Delivery { get; init; }
+    public JsonElement? Metadata { get; init; }
     public required ImmutableArray<MessageSegment> Segments { get; init; }
 }
 
@@ -129,7 +151,7 @@ public sealed record HistoryQuery
     public MessageAddress? Address { get; init; }
     public string? SenderId { get; init; }
     public MessageDirection? Direction { get; init; }
-    public SegmentKind? SegmentKind { get; init; }
+    public string? SegmentType { get; init; }
     public required HistoryTime Time { get; init; }
     public DateTimeOffset? From { get; init; }
     public DateTimeOffset? Until { get; init; }

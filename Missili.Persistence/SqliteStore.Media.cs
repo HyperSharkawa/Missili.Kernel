@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Missili.Abstractions;
@@ -8,6 +9,38 @@ namespace Missili.Persistence;
 /// <summary>媒体引用、文件提交日志和转述缓存的持久化操作。</summary>
 public sealed partial class SqliteStore
 {
+    /// <summary>创建导入归档的持久身份，暂存文件提交可沿用普通归档恢复机制。</summary>
+    public Task<MediaWork> CreateImportedMediaAsync(MediaKind kind, JsonElement? representation, DateTimeOffset now, CancellationToken cancellationToken) => WriteAsync(database =>
+    {
+        if (!Enum.IsDefined(kind)) throw new ArgumentException("媒体种类无效。");
+        MediaEntity row = new()
+        {
+            Id = Guid.NewGuid(),
+            Kind = kind,
+            State = MediaState.Downloading,
+            Claimed = true,
+            CreatedAt = now.ToUnixTimeMilliseconds(),
+            SourceJson = "{\"Kind\":\"import\",\"Version\":1,\"Data\":{}}",
+            RepresentationJson = representation?.GetRawText()
+        };
+        database.MediaReferences.Add(row); database.SaveChanges(); return MediaSnapshot(row);
+    }, cancellationToken);
+
+    /// <summary>保存实际取得内容的格式信息，不参与内容摘要键。</summary>
+    public Task SetMediaRepresentationAsync(Guid id, JsonElement? representation, CancellationToken cancellationToken) => WriteAsync(database =>
+    {
+        MediaEntity row = database.MediaReferences.Single(item => item.Id == id);
+        row.RepresentationJson = representation?.GetRawText(); database.SaveChanges(); return true;
+    }, cancellationToken);
+
+    /// <summary>解析器因卸载或离线不可用时保留引用，等待目录变化后恢复。</summary>
+    public Task WaitMediaForAdapterAsync(Guid id, CancellationToken cancellationToken) => WriteAsync(database =>
+    {
+        MediaEntity row = database.MediaReferences.Single(item => item.Id == id);
+        if (row.State != MediaState.Downloading) throw new InvalidOperationException("当前媒体状态不能等待适配器。");
+        row.State = MediaState.WaitingForAdapter; row.Claimed = false; row.Error = "等待适配器恢复。";
+        database.SaveChanges(); return true;
+    }, cancellationToken);
     /// <summary>原子领取一批待获取或待收尾的引用，避免同一记录重复领取。</summary>
     public Task<ImmutableArray<MediaWork>> ClaimMediaAsync(int count, CancellationToken cancellationToken)
     {
@@ -161,8 +194,8 @@ public sealed partial class SqliteStore
     /// <summary>构造不带 EF 跟踪的内部媒体快照。</summary>
     private static MediaWork MediaSnapshot(MediaEntity row) => new()
     {
-        Status = new MediaStatus { Id = row.Id, Kind = row.Kind, State = row.State, ContentKey = row.ContentKey, Length = row.Length, Error = row.Error },
-        Source = new Uri(row.Source),
+        Status = new MediaStatus { Id = row.Id, Kind = row.Kind, State = row.State, ContentKey = row.ContentKey, Length = row.Length, Error = row.Error, Representation = ParseJson(row.RepresentationJson) },
+        Source = JsonSerializer.Deserialize<MediaSource>(row.SourceJson) ?? throw new InvalidDataException("媒体来源为空。"),
         SourceKey = row.SourceKey,
         TemporaryPath = row.TemporaryPath,
         RelativePath = row.RelativePath

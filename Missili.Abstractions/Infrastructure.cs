@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Text.Json;
 
 namespace Missili.Abstractions;
 
@@ -19,16 +20,19 @@ public sealed class InfrastructureOptions
     public TimeSpan HeadersTimeout { get; set; } = TimeSpan.FromSeconds(30);
     public TimeSpan ReadIdleTimeout { get; set; } = TimeSpan.FromSeconds(60);
     public TimeSpan PluginStopTimeout { get; set; } = TimeSpan.FromSeconds(30);
+    public int ContentConcurrency { get; set; } = 2;
+    public int ContentCapacity { get; set; } = 64;
 
     /// <summary>在启动后台工作前拒绝非法配置，不静默修正容量。</summary>
     public void Validate()
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(DataDirectory);
         int[] capacities = [IngressCapacity, MessageConcurrency, PluginConcurrency, PerPluginConcurrency,
-            InvocationCapacity, WriteCapacity, ReadConcurrency, DownloadConcurrency, DownloadCapacity];
+            InvocationCapacity, WriteCapacity, ReadConcurrency, DownloadConcurrency, DownloadCapacity, ContentConcurrency, ContentCapacity];
         if (capacities.Any(value => value <= 0)) throw new ArgumentException("队列容量和并发数必须大于零。");
         if (PerPluginConcurrency > PluginConcurrency) throw new ArgumentException("单插件并发不能超过全局并发。");
         if (DownloadCapacity < DownloadConcurrency) throw new ArgumentException("媒体队列容量不能小于下载并发数。");
+        if (ContentCapacity < ContentConcurrency) throw new ArgumentException("结构化内容队列容量不能小于归档并发数。");
         TimeSpan[] timeouts = [ConnectTimeout, HeadersTimeout, ReadIdleTimeout, PluginStopTimeout];
         if (timeouts.Any(value => value <= TimeSpan.Zero)) throw new ArgumentException("超时必须大于零。");
     }
@@ -38,7 +42,7 @@ public sealed class InfrastructureOptions
 public sealed record MediaWork
 {
     public required MediaStatus Status { get; init; }
-    public required Uri Source { get; init; }
+    public required MediaSource Source { get; init; }
     public string? SourceKey { get; init; }
     public string? TemporaryPath { get; init; }
     public string? RelativePath { get; init; }
@@ -53,7 +57,7 @@ public sealed record StoredHookOrder
 }
 
 /// <summary>宿主实现之间的存储边界，插件上下文只暴露其读取子接口。</summary>
-public interface IInfrastructureStore : IMessageHistory, IMediaTranscriptionStore, IAsyncDisposable
+public interface IInfrastructureStore : IMessageHistory, IMediaTranscriptionStore, IPlatformEventHistory, IAsyncDisposable
 {
     /// <summary>应用迁移并标记上次中断业务，恢复未完成的媒体状态。</summary>
     Task InitializeAsync(Guid runId, CancellationToken cancellationToken);
@@ -73,6 +77,14 @@ public interface IInfrastructureStore : IMessageHistory, IMediaTranscriptionStor
     Task InterruptRunAsync(Guid runId, CancellationToken cancellationToken);
     /// <summary>更新撤回和删除标记，保留原始内容。</summary>
     Task SetVisibilityAsync(long id, bool recalled, bool deleted, CancellationToken cancellationToken);
+    /// <summary>保存业务事件及撤回状态，提交前不进行插件分发。</summary>
+    Task<EventReceipt> AppendEventAsync(IncomingPlatformEvent input, DateTimeOffset receivedAt, Guid runId, CancellationToken cancellationToken);
+    /// <summary>领取本次运行待分发的业务事件。</summary>
+    Task<ImmutableArray<PlatformEventSnapshot>> ClaimEventsAsync(Guid runId, int count, CancellationToken cancellationToken);
+    /// <summary>保存事件实际分发结束状态。</summary>
+    Task SetEventProcessingAsync(long id, ProcessingState state, CancellationToken cancellationToken);
+    /// <summary>按精确平台身份读取规范消息，用于引用及回执关联。</summary>
+    Task<MessageSnapshot?> FindPlatformMessageAsync(MessageAddress address, string platformId, MessageDirection? direction, CancellationToken cancellationToken);
     /// <summary>领取有限批次归档工作，包含需要收尾的文件操作。</summary>
     Task<ImmutableArray<MediaWork>> ClaimMediaAsync(int count, CancellationToken cancellationToken);
     /// <summary>取得媒体内部状态。</summary>
@@ -85,6 +97,24 @@ public interface IInfrastructureStore : IMessageHistory, IMediaTranscriptionStor
     Task CompleteMediaAsync(Guid id, string contentKey, long length, string relativePath, CancellationToken cancellationToken);
     /// <summary>记录失败而不删除原始消息。</summary>
     Task FailMediaAsync(Guid id, string error, CancellationToken cancellationToken);
+    /// <summary>登记流导入引用，调用者持有读取责任，后台调度不得再次领取。</summary>
+    Task<MediaWork> CreateImportedMediaAsync(MediaKind kind, JsonElement? representation, DateTimeOffset now, CancellationToken cancellationToken);
+    /// <summary>记录获取到的文件格式及转换来源，不把转换结果冒充原始编码。</summary>
+    Task SetMediaRepresentationAsync(Guid id, JsonElement? representation, CancellationToken cancellationToken);
+    /// <summary>适配器不可用时保留等待状态，不记为永久下载失败。</summary>
+    Task WaitMediaForAdapterAsync(Guid id, CancellationToken cancellationToken);
+    /// <summary>目录变化后仅唤醒仍在等待适配器的归档。</summary>
+    Task ResumeAdapterArchivesAsync(CancellationToken cancellationToken);
+    /// <summary>读取结构化内容，正文不进入聊天分发。</summary>
+    Task<StructuredContentSnapshot?> GetContentAsync(Guid id, CancellationToken cancellationToken);
+    /// <summary>按稳定来源登记结构化归档，不重新启动已失败任务。</summary>
+    Task<Guid> RequestContentAsync(ContentSource source, DateTimeOffset now, CancellationToken cancellationToken);
+    /// <summary>领取有限的结构化归档工作。</summary>
+    Task<ImmutableArray<StructuredContentSnapshot>> ClaimContentsAsync(int count, CancellationToken cancellationToken);
+    /// <summary>原子保存新增节点、媒体位置及恢复检查点，重复位置复用原引用。</summary>
+    Task<StructuredContentSnapshot> SaveContentAsync(Guid id, ContentExpansion progress, DateTimeOffset now, CancellationToken cancellationToken);
+    /// <summary>更新等待或失败状态，保留所有已取得节点。</summary>
+    Task SetContentStateAsync(Guid id, ContentState state, ContentIssue? issue, CancellationToken cancellationToken);
     /// <summary>读取某钩子与执行阶段的持久化顺序。</summary>
     Task<StoredHookOrder> GetHookOrderAsync(string hookId, HandlerKind kind, CancellationToken cancellationToken);
     /// <summary>按修订号保存配置，不允许旧版本覆盖新版本。</summary>

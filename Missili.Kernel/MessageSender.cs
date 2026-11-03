@@ -4,7 +4,7 @@ using Missili.Abstractions;
 namespace Missili.Kernel;
 
 /// <summary>保存发送意图后至多调用一次传输；本类没有任何具体平台实现。</summary>
-public sealed class MessageSender : IMessageSender, IAsyncDisposable
+public sealed class MessageSender : IMessageSender, ISendReceiptSink, IAsyncDisposable
 {
     private readonly object _gate = new();
     private readonly CancellationTokenSource _stop = new();
@@ -14,16 +14,18 @@ public sealed class MessageSender : IMessageSender, IAsyncDisposable
     private bool _disposed;
     private readonly IInfrastructureStore _store;
     private readonly IReadOnlyDictionary<string, IMessageTransport> _transports;
+    private readonly IAdapterRuntime? _adapters;
     private readonly DispatchSignal _signal;
     private readonly Guid _runId;
     private readonly TimeProvider _clock;
     private readonly ILogger _logger;
 
     /// <summary>组装明确注册的传输实现；空集合表示尚未接入平台。</summary>
-    public MessageSender(IInfrastructureStore store, IEnumerable<IMessageTransport> transports, DispatchSignal signal, Guid runId, ILogger<MessageSender> logger, TimeProvider? clock = null)
+    public MessageSender(IInfrastructureStore store, IEnumerable<IMessageTransport> transports, DispatchSignal signal, Guid runId, ILogger<MessageSender> logger, TimeProvider? clock = null, IAdapterRuntime? adapters = null)
     {
         _store = store;
         _transports = transports.ToDictionary(item => item.AdapterId, StringComparer.Ordinal);
+        _adapters = adapters;
         _signal = signal;
         _runId = runId;
         _logger = logger;
@@ -35,6 +37,7 @@ public sealed class MessageSender : IMessageSender, IAsyncDisposable
     {
         message.Address.Validate();
         ContentValidation.Validate(message.Segments);
+        message = message.Freeze();
         lock (_gate)
         {
             if (_closing) return new SendResult { State = DeliveryState.Cancelled, Recorded = false, Error = "宿主已停止接收发送。" };
@@ -66,9 +69,10 @@ public sealed class MessageSender : IMessageSender, IAsyncDisposable
             return new SendResult { State = DeliveryState.Failed, Recorded = false, Error = "发送意图保存失败：" + exception.GetType().Name };
         }
         TransportResult result;
+        _transports.TryGetValue(message.Address.AdapterId, out IMessageTransport? transport);
         if (cancellationToken.IsCancellationRequested)
             result = new TransportResult { State = DeliveryState.Cancelled };
-        else if (!_transports.TryGetValue(message.Address.AdapterId, out IMessageTransport? transport))
+        else if (transport is null && _adapters is null)
             result = new TransportResult { State = DeliveryState.Failed, Error = "目标适配器尚未注册传输实现。" };
         else
         {
@@ -85,8 +89,9 @@ public sealed class MessageSender : IMessageSender, IAsyncDisposable
             {
                 try
                 {
-                    result = await transport.SendAsync(stored.Id, message, cancellationToken).ConfigureAwait(false);
-                    if (result.State is not (DeliveryState.Confirmed or DeliveryState.Failed or DeliveryState.Unknown or DeliveryState.Cancelled))
+                    result = transport is not null ? await transport.SendAsync(stored.Id, message, cancellationToken).ConfigureAwait(false)
+                        : await _adapters!.SendAsync(stored.Id, message, cancellationToken).ConfigureAwait(false);
+                    if (result.State is not (DeliveryState.Confirmed or DeliveryState.Failed or DeliveryState.Unknown or DeliveryState.Cancelled or DeliveryState.Accepted))
                         throw new InvalidOperationException("传输返回了非法的最终状态。");
                 }
                 catch (Exception exception)
@@ -98,6 +103,20 @@ public sealed class MessageSender : IMessageSender, IAsyncDisposable
             }
         }
         return await RecordAsync(stored.Id, result).ConfigureAwait(false);
+    }
+
+    /// <summary>迟到确认仅更新已保存发送状态；发送后通知由存储首次确认状态控制。</summary>
+    public async Task<SendResult> RecordReceiptAsync(long messageId, TransportResult result, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (result.State is not (DeliveryState.Confirmed or DeliveryState.Failed or DeliveryState.Accepted)) throw new ArgumentException("迟到回执必须包含明确平台结果。");
+        lock (_gate)
+        {
+            if (_closing) return new SendResult { MessageId = messageId, State = result.State, Recorded = false, Error = "宿主已停止记录新回执。" };
+            _active++;
+        }
+        try { return await RecordAsync(messageId, result).ConfigureAwait(false); }
+        finally { lock (_gate) { _active--; if (_closing && _active == 0) _drained.TrySetResult(); } }
     }
 
     /// <summary>停止接收新发送并等待实际传输及记录退出，覆盖不属于插件调用的宿主发送。</summary>

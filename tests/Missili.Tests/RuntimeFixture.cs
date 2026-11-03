@@ -52,7 +52,7 @@ internal sealed class RuntimeFixture : IAsyncDisposable
         PluginManifest manifest = new()
         {
             SchemaVersion = 1,
-            ContractVersion = 1,
+            ContractVersion = 2,
             Id = id,
             Name = id,
             Version = version,
@@ -90,10 +90,15 @@ internal sealed class RuntimeFixture : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await Runtime.DisposeAsync();
-        // 可回收程序集的文件句柄由 GC 最终释放；此操作仅用于测试目录清理。
-        GC.Collect();
-        GC.WaitForPendingFinalizers();
-        GC.Collect();
+        // 已完成取消任务的续体可能仍在退出栈帧，先证明弱引用消失再清理 DLL。
+        // 此操作仅用于实际卸载验收，不进入生产路径，也不跳过失败。
+        PluginManager manager = (PluginManager)Runtime.Plugins;
+        WeakReference[] references = manager.GetStatuses().Select(status => manager.GetLastUnloadReference(status.Id))
+            .Where(reference => reference is not null).Cast<WeakReference>().ToArray();
+        for (int attempt = 0; attempt < 20 && references.Any(reference => reference.IsAlive); attempt++)
+        { GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect(); await Task.Yield(); }
+        if (references.Any(reference => reference.IsAlive)) throw new InvalidOperationException("测试结束后插件加载上下文仍被引用，不能清理运行目录。");
+        GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
         using SqliteConnection connection = new(new SqliteConnectionStringBuilder { DataSource = Path.Combine(Root, "history.db"), ForeignKeys = true }.ToString());
         SqliteConnection.ClearPool(connection);
         string allowed = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "Missili.Tests")) + Path.DirectorySeparatorChar;

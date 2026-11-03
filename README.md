@@ -2,7 +2,7 @@
 
 基于 .NET 10 的插件化 Bot 基础设施，采用 AGPL-3.0 许可证。
 
-当前阶段提供通用消息持久化、媒体归档、事件编排、编译插件热重载及发送结果管理。完整链路通过测试适配器验证；尚未接入 QQ、模型、MCP 或实际 WebUI。
+当前提供可扩展消息与平台事件持久化、媒体及合并转发归档、用户编排、编译插件热重载及 OneBot v11 适配器。正向、反向 WebSocket 均支持 Universal 和 API／Event 分离布局。协议联调使用独立 Mock；真实 QQ 账号兼容验收单独进行。模型、Agent、MCP 和 WebUI 留待后续阶段。
 
 ## 构建与运行
 
@@ -16,20 +16,22 @@ dotnet test tests/Missili.Tests/Missili.Tests.csproj -c Release --no-build --no-
 dotnet run --project Missili.Host
 ```
 
-完整测试包含一次持续超过一分钟的本地媒体传输。测试使用临时数据库、合成数据和回环 HTTP 服务，不需要真实账号或模型。
+完整测试包含一次持续超过一分钟的本地媒体传输。测试使用临时数据库、合成数据及回环 HTTP／WebSocket 服务，不需要真实账号或模型。
 
 宿主提供：
 
 - `GET /health/live`：进程存活。
 - `GET /health/ready`：基础设施初始化完成且存储可用。
 
-默认不加载示例插件，也不注册任何平台传输。健康响应不包含聊天、配置或本地路径。
+默认不加载适配器或示例回复插件。发布目录包含 `plugins/onebot` 官方编译包，需明确配置启用。健康响应不包含聊天、配置或本地路径；适配器离线不使存储就绪检查失败。
+
+OneBot 配置、能力清单与协议 Mock 见 [OneBot 接入说明](docs/onebot.md)。
 
 ## 数据与配置
 
 配置位于 `Missili.Host/appsettings.json`。`Infrastructure.DataDirectory` 默认是内容根目录下的 `data`；相对路径以 ASP.NET Core 内容根目录解析。
 
-- `history.db` 保存历史、媒体引用、转述结果与用户编排。
+- `history.db` 保存聊天历史、平台事件、结构化内容、媒体引用、转述结果与用户编排。
 - `media` 保存原件和可恢复的暂存文件。
 - `plugins` 保存安装包和独立运行代次。
 
@@ -85,6 +87,8 @@ dotnet build samples/Missili.Sample.History -c Release
 | Missili.Nexus | 编译包、加载代次和实际程序集卸载 |
 | Missili.Kernel | 接收、媒体、消息分发和发送状态 |
 | Missili.Host | 配置、组装、生命周期及健康接口 |
+| Missili.Adapters.OneBot | 可动态加载的 OneBot v11 官方适配器 |
+| Missili.OneBot.Mock | 独立协议对端及合成场景 |
 
 初始数据库通过 EF Core migrations 创建，不使用 `EnsureCreated`。检查模型与迁移是否一致：
 
@@ -99,12 +103,12 @@ dotnet ef migrations has-pending-model-changes --project Missili.Persistence --s
 - 普通监听器异常只影响自身调用。
 - 消息原文与后续处理内容分离，插件修改不会覆盖历史。
 - 发送结果未知不自动重发，重启不自动补跑插件业务。
-- 未完成媒体归档可以恢复，恢复不重新触发插件。
+- 未完成媒体和转发归档可以恢复，恢复不重新触发插件或补发消息。
 - 新版本初始化失败保持插件不可用，不自动回滚旧版本。
 - 关闭和热重载采用协作式取消，不能强行卸载仍在执行的代码。
 
 ## 参考与许可证
 
-插件化与事件传播设计参考 [AstrBot](https://github.com/AstrBotDevs/AstrBot)。当前基础设施采用 .NET 实现，具体平台与模型能力将在后续阶段接入。
+插件化与事件传播设计参考 [AstrBot](https://github.com/AstrBotDevs/AstrBot)。OneBot 协议依据固定为 [标准提交 d4456ee](https://github.com/botuniverse/onebot-11/tree/d4456ee706f9ada9c2dfde56a2bcfc69752600e4)，实现扩展单独声明。
 
 主要技术依据包括 [.NET 插件加载](https://learn.microsoft.com/dotnet/core/tutorials/creating-app-with-plugin-support)、[程序集卸载](https://learn.microsoft.com/dotnet/standard/assembly/unloadability)、[EF Core SQLite](https://learn.microsoft.com/ef/core/providers/sqlite/) 与 [Channels](https://learn.microsoft.com/dotnet/core/extensions/channels)。许可证全文见 [LICENSE](LICENSE)。
