@@ -1,0 +1,10 @@
+{
+  "Infrastructure": { "DataDirectory": "data" },
+  "Models": { "Enabled": true, "ConfigurationDirectory": "../../samples/model-config" },
+  "Plugins": [
+    { "Enabled": true, "Directory": "plugins/openai" },
+    { "Enabled": true, "Directory": "plugins/anthropic" },
+    { "Enabled": true, "Directory": "plugins/onebot", "ConfigurationFile": "../../samples/model-mock/adapter.json" },
+    { "Enabled": true, "Directory": "plugins/model-chat", "ConfigurationFile": "../../samples/model-mock/command.json" }
+  ]
+}

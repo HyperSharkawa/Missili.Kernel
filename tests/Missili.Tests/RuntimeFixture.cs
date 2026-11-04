@@ -19,22 +19,43 @@ internal sealed class RuntimeFixture : IAsyncDisposable
     public InfrastructureRuntime Runtime { get; }
 
     /// <summary>创建独立数据目录及真实框架，不加载任何真实账号配置。</summary>
-    private RuntimeFixture(Action<InfrastructureOptions>? configure, TimeProvider? clock)
+    private RuntimeFixture(Action<InfrastructureOptions>? configure, TimeProvider? clock, bool enableModels, ModelOptions? modelOptions)
     {
         Root = Path.Combine(Path.GetTempPath(), "Missili.Tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Root);
         Options = new InfrastructureOptions { DataDirectory = Root };
         configure?.Invoke(Options);
         Transport = new RecordingTransport();
-        Runtime = InfrastructureFactory.Create(Options, NullLoggerFactory.Instance, [Transport], clock);
+        ModelOptions models = (modelOptions ?? new ModelOptions()) with { Enabled = enableModels, ConfigurationDirectory = Path.Combine(Root, "model-config") };
+        Runtime = InfrastructureFactory.Create(Options, NullLoggerFactory.Instance, [Transport], clock, models);
     }
 
     /// <summary>执行真实宿主初始化与数据库迁移。</summary>
-    public static async Task<RuntimeFixture> CreateAsync(CancellationToken token, Action<InfrastructureOptions>? configure = null, TimeProvider? clock = null)
+    public static async Task<RuntimeFixture> CreateAsync(CancellationToken token, Action<InfrastructureOptions>? configure = null, TimeProvider? clock = null,
+        ModelConfiguration? models = null, ModelOptions? modelOptions = null)
     {
-        RuntimeFixture fixture = new(configure, clock);
+        RuntimeFixture fixture = new(configure, clock, models is not null, modelOptions);
+        if (models is not null) await fixture.WriteModelsAsync(models, token);
         await fixture.Runtime.StartAsync(token);
         return fixture;
+    }
+
+    /// <summary>写入测试独占的实际配置文件，模型模块仍通过生产文件读取路径初始化。</summary>
+    public async Task WriteModelsAsync(ModelConfiguration models, CancellationToken token)
+        => await WriteModelConfigurationAsync(Root, models, token);
+
+    /// <summary>同一配置写入器供内核夹具和真实 Web 宿主夹具复用。</summary>
+    internal static async Task WriteModelConfigurationAsync(string root, ModelConfiguration models, CancellationToken token)
+    {
+        string directory = Path.Combine(root, "model-config");
+        Directory.CreateDirectory(Path.Combine(directory, "profiles"));
+        JsonSerializerOptions json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } };
+        await File.WriteAllBytesAsync(Path.Combine(directory, "catalog.json"), JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, object>
+        { ["providers"] = models.Providers, ["models"] = models.Models }, json), token);
+        await File.WriteAllBytesAsync(Path.Combine(directory, "routes.json"), JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, object>
+        { ["defaultProfileId"] = models.DefaultProfileId, ["routes"] = models.Routes }, json), token);
+        for (int index = 0; index < models.Profiles.Length; index++)
+            await File.WriteAllBytesAsync(Path.Combine(directory, "profiles", index + ".json"), JsonSerializer.SerializeToUtf8Bytes(models.Profiles[index], json), token);
     }
 
     /// <summary>复制实际构建产物并生成测试清单，不把插件程序集加载到默认上下文。</summary>
@@ -52,7 +73,7 @@ internal sealed class RuntimeFixture : IAsyncDisposable
         PluginManifest manifest = new()
         {
             SchemaVersion = 1,
-            ContractVersion = 2,
+            ContractVersion = 3,
             Id = id,
             Name = id,
             Version = version,

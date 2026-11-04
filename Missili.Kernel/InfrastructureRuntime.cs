@@ -31,6 +31,7 @@ public sealed class InfrastructureRuntime : IMessageIngress, IPlatformEventIngre
     private bool _accepting;
     private bool _stopped;
     private bool _disposed;
+    private bool _storageInitialized;
     private string? _failure;
 
     public IMessageHistory History => _store;
@@ -43,12 +44,15 @@ public sealed class InfrastructureRuntime : IMessageIngress, IPlatformEventIngre
     public IHookOrderService Orders { get; }
     public IMessageSender Sender { get; }
     public IAdapterRuntime Adapters { get; }
+    public IModelProviderRuntime ModelProviders { get; }
+    public IModelModule Models { get; }
     public bool IsReady => Volatile.Read(ref _accepting) && _media.IsHealthy && _contents.IsHealthy && Volatile.Read(ref _failure) is null;
 
     /// <summary>组装实际服务但不提前启动接收；调用者负责提供同一个运行标识。</summary>
     public InfrastructureRuntime(IInfrastructureStore store, MediaArchive media, MessageDispatcher dispatcher, IPluginRuntime plugins,
         IInvocationScheduler scheduler, HookOrderService orders, MessageSender sender, DispatchSignal signal, Guid runId,
-        InfrastructureOptions options, ILogger<InfrastructureRuntime> logger, TimeProvider clock, IAdapterRuntime adapters, StructuredContentArchive contents)
+        InfrastructureOptions options, ILogger<InfrastructureRuntime> logger, TimeProvider clock, IAdapterRuntime adapters, StructuredContentArchive contents,
+        IModelProviderRuntime modelProviders, IModelModule models)
     {
         options.Validate();
         _store = store; _media = media; _dispatcher = dispatcher; _plugins = plugins; _scheduler = scheduler;
@@ -56,6 +60,8 @@ public sealed class InfrastructureRuntime : IMessageIngress, IPlatformEventIngre
         Orders = orders; Sender = sender; _sender = sender; _signal = signal; _runId = runId; _options = options; _logger = logger;
         _clock = clock;
         Adapters = adapters;
+        ModelProviders = modelProviders;
+        Models = models;
         _contents = contents;
         _ingress = Channel.CreateBounded<ReceiveWork>(new BoundedChannelOptions(options.IngressCapacity)
         { FullMode = BoundedChannelFullMode.Wait, SingleReader = true, AllowSynchronousContinuations = false });
@@ -79,9 +85,12 @@ public sealed class InfrastructureRuntime : IMessageIngress, IPlatformEventIngre
         try
         {
             if (_receivePump is not null || _stopped) throw new InvalidOperationException("运行时不能重复启动。");
+            await Models.InitializeAsync(cancellationToken).ConfigureAwait(false);
             await _store.InitializeAsync(_runId, cancellationToken).ConfigureAwait(false);
+            _storageInitialized = true;
             await _media.StartAsync(cancellationToken).ConfigureAwait(false);
             _contents.Start();
+            Models.Start();
             _archiveChanges = Task.Run(WatchAdaptersAsync);
             _receivePump = Task.Run(ReceivePumpAsync);
             _dispatchPump = Task.Run(DispatchPumpAsync);
@@ -190,6 +199,7 @@ public sealed class InfrastructureRuntime : IMessageIngress, IPlatformEventIngre
                     events = await _store.ClaimEventsAsync(_runId, capacity - messages.Length, _stop.Token).ConfigureAwait(false);
                 foreach (MessageSnapshot message in messages)
                 {
+                    if (message.Segments.Any(segment => !segment.MediaIds.IsEmpty || segment.ContentId.HasValue)) Models.NotifyMediaChanged();
                     Task flow = RunFlowAsync(message);
                     _flows.Add(flow);
                     // 必须在 Task 已完成之后唤醒，避免先消费通知却仍看见所有活动槽占满。
@@ -259,6 +269,7 @@ public sealed class InfrastructureRuntime : IMessageIngress, IPlatformEventIngre
             await _stop.CancelAsync().ConfigureAwait(false);
             Task<PluginStatus[]> plugins = Task.WhenAll(_plugins.GetStatuses().Select(status => _plugins.StopAsync(status.Id, cancellationToken)));
             Task sends = _sender.StopAsync(cancellationToken);
+            Task models = Models.StopAsync();
             Task media = _media.StopAsync();
             Task contents = _contents.StopAsync();
             if (_receivePump is not null) await _receivePump.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -267,11 +278,12 @@ public sealed class InfrastructureRuntime : IMessageIngress, IPlatformEventIngre
                 throw new InvalidOperationException("仍有插件未实际退出，运行时保留资源跟踪，未关闭存储。");
             if (_dispatchPump is not null) await _dispatchPump.WaitAsync(cancellationToken).ConfigureAwait(false);
             await sends.ConfigureAwait(false);
+            await models.WaitAsync(cancellationToken).ConfigureAwait(false);
             await media.WaitAsync(cancellationToken).ConfigureAwait(false);
             await contents.WaitAsync(cancellationToken).ConfigureAwait(false);
             if (_archiveChanges is not null) await _archiveChanges.WaitAsync(cancellationToken).ConfigureAwait(false);
             await _scheduler.DisposeAsync().AsTask().WaitAsync(cancellationToken).ConfigureAwait(false);
-            await _store.InterruptRunAsync(_runId, CancellationToken.None).ConfigureAwait(false);
+            if (_storageInitialized) await _store.InterruptRunAsync(_runId, CancellationToken.None).ConfigureAwait(false);
             _stopped = true;
         }
         finally { _lifecycle.Release(); }

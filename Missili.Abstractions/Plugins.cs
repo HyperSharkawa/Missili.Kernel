@@ -97,6 +97,14 @@ public interface IPluginContext
     ISendReceiptSink Receipts { get; }
     IPlatformOperations Platform { get; }
     IAdapterRegistry Adapters { get; }
+    IModelProviderRegistry ModelProviders { get; }
+    IModelService Models { get; }
+    IModelCatalog ModelCatalog { get; }
+    IConversationProfileService Profiles { get; }
+    IConversationContextService ConversationContext { get; }
+    IMediaTranscriptionService MediaTranscription { get; }
+    IMediaRepresentationService MediaRepresentation { get; }
+    IModelCallHistory ModelCalls { get; }
     IHandlerRegistry Handlers { get; }
     IPluginTaskScope Tasks { get; }
 }

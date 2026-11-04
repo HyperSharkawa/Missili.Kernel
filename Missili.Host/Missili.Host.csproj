@@ -10,16 +10,23 @@
   <ItemGroup>
     <ProjectReference Include="../Missili.Kernel/Missili.Kernel.csproj" />
     <ProjectReference Include="../Missili.Matrix/Missili.Matrix.csproj" />
+    <ProjectReference Include="../Missili.Models/Missili.Models.csproj" />
     <ProjectReference Include="../Missili.Nexus/Missili.Nexus.csproj" />
     <ProjectReference Include="../Missili.Persistence/Missili.Persistence.csproj" />
     <ProjectReference Include="../Missili.Adapters.OneBot/Missili.Adapters.OneBot.csproj" ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="../Missili.Providers.OpenAI/Missili.Providers.OpenAI.csproj" ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="../Missili.Providers.Anthropic/Missili.Providers.Anthropic.csproj" ReferenceOutputAssembly="false" Private="false" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
     <PackageReference Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" Version="1.24.2-preview.1" />
   </ItemGroup>
 
-  <Target Name="PublishOfficialAdapters" AfterTargets="Publish">
+  <Target Name="PublishOfficialPlugins" AfterTargets="Publish">
     <MSBuild Projects="../Missili.Adapters.OneBot/Missili.Adapters.OneBot.csproj" Targets="Publish"
       Properties="Configuration=$(Configuration);PublishDir=$([System.IO.Path]::GetFullPath('$(PublishDir)', '$(MSBuildProjectDirectory)'))/plugins/onebot/;UseAppHost=false" />
+    <MSBuild Projects="../Missili.Providers.OpenAI/Missili.Providers.OpenAI.csproj" Targets="Publish"
+      Properties="Configuration=$(Configuration);PublishDir=$([System.IO.Path]::GetFullPath('$(PublishDir)', '$(MSBuildProjectDirectory)'))/plugins/openai/;UseAppHost=false" />
+    <MSBuild Projects="../Missili.Providers.Anthropic/Missili.Providers.Anthropic.csproj" Targets="Publish"
+      Properties="Configuration=$(Configuration);PublishDir=$([System.IO.Path]::GetFullPath('$(PublishDir)', '$(MSBuildProjectDirectory)'))/plugins/anthropic/;UseAppHost=false" />
   </Target>
 
 </Project>

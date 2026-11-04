@@ -67,6 +67,8 @@ public interface IAdapterDriver
     Task AcceptAsync(IWebSocketRequest request, CancellationToken cancellationToken);
     /// <summary>解析平台媒体，返回原件流或宿主可继续下载的 HTTP 来源。</summary>
     Task<MediaSourceRead> ResolveMediaAsync(MediaSource source, CancellationToken cancellationToken);
+    /// <summary>显式请求媒体派生格式，返回可读取流，不把重命名当作转码。</summary>
+    Task<MediaSourceRead> ResolveRepresentationAsync(MediaSource source, string format, CancellationToken cancellationToken);
     /// <summary>展开结构化内容，每次成功进度通过宿主回调持久化后继续。</summary>
     Task ExpandContentAsync(StructuredContentSnapshot current, Func<ContentExpansion, CancellationToken, Task> save, CancellationToken cancellationToken);
 }
@@ -108,6 +110,8 @@ public interface IAdapterRuntime : IPlatformOperations
     Task AcceptAsync(string adapterId, IWebSocketRequest request, CancellationToken cancellationToken);
     /// <summary>解析媒体并让返回的流继续持有代次资格。</summary>
     Task<MediaSourceRead> ResolveMediaAsync(MediaSource source, CancellationToken cancellationToken);
+    /// <summary>派生格式读取同样持有适配器代次资格直到流被释放。</summary>
+    Task<MediaSourceRead> ResolveRepresentationAsync(MediaSource source, string format, CancellationToken cancellationToken);
     /// <summary>在归档工作内调用当前代次，调用取消不会重放聊天业务。</summary>
     Task ExpandContentAsync(StructuredContentSnapshot current, Func<ContentExpansion, CancellationToken, Task> save, CancellationToken cancellationToken);
     /// <summary>等待适配器目录发生变化，避免等待归档忙轮询。</summary>

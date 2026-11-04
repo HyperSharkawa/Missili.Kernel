@@ -15,15 +15,29 @@ internal sealed partial class OneBotAdapter
         string? mapped = MapFile(file);
         if (mapped is not null) return OpenFile(mapped, null);
         if (type == "video") throw new MediaAcquisitionException("标准没有视频文件查询接口，且未提供可读取来源。");
+        return await QueryMediaAsync(file, type, _options.RecordFormat, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>显式 WAV 转换必须调用 get_record，不可返回映射到的原始 SILK 文件。</summary>
+    public Task<MediaSourceRead> ResolveRepresentationAsync(MediaSource source, string format, CancellationToken cancellationToken)
+    {
+        if (source.Kind is not ("onebot11.media" or "http") || source.Version != 1 || OneBotCodec.String(source.Data, "type") != "record" || format != "wav")
+            throw new MediaAcquisitionException("该媒体来源不支持所请求的派生格式。");
+        return QueryMediaAsync(OneBotCodec.String(source.Data, "file"), "record", format, cancellationToken);
+    }
+
+    /// <summary>使用标准媒体查询并保留转换来源；本地访问仍必须经过显式映射。</summary>
+    private async Task<MediaSourceRead> QueryMediaAsync(string file, string type, string recordFormat, CancellationToken cancellationToken)
+    {
         Dictionary<string, object> parameters = new() { ["file"] = file };
-        if (type == "record") parameters["out_format"] = _options.RecordFormat;
+        if (type == "record") parameters["out_format"] = recordFormat;
         else if (type != "image") throw new NotSupportedException("不支持的媒体类别。");
         PlatformOperationResult result = await InvokeAsync(type == "image" ? "get_image" : "get_record", JsonSerializer.SerializeToElement(parameters), cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
         if (result.State == PlatformOperationState.Unavailable || (result.State == PlatformOperationState.Unknown && !GetStatus().ApiAvailable)) throw new AdapterUnavailableException();
         if (result.State != PlatformOperationState.Succeeded || result.Data is null) throw new InvalidDataException("平台媒体查询未成功。");
         JsonElement? representation = type == "record" ? JsonSerializer.SerializeToElement(new Dictionary<string, object>
-        { ["format"] = _options.RecordFormat, ["original"] = false, ["source"] = "onebot11.get_record" }) : null;
+        { ["format"] = recordFormat, ["original"] = false, ["source"] = "onebot11.get_record" }) : null;
         JsonElement data = result.Data.Value;
         if (type == "record" && _options.CompatibilityProfile == CompatibilityProfile.SnowLuma && data.TryGetProperty("base64", out JsonElement base64))
         {
@@ -31,7 +45,7 @@ internal sealed partial class OneBotAdapter
             return new MediaSourceRead { Content = new MemoryStream(Convert.FromBase64String(text), writable: false), Representation = representation };
         }
         string path = OneBotCodec.String(data, "file");
-        mapped = MapFile(path);
+        string? mapped = MapFile(path);
         if (mapped is null) throw new MediaAcquisitionException("对端只返回文件路径，但未配置可访问映射。");
         return OpenFile(mapped, representation);
     }

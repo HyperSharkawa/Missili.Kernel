@@ -14,6 +14,8 @@ public sealed record PluginHostServices
     public required IMessageIngress Ingress { get; init; }
     public required IPlatformEventIngress EventIngress { get; init; }
     public required AdapterDirectory Adapters { get; init; }
+    public required ModelProviderDirectory ModelProviders { get; init; }
+    public required IModelModule Models { get; init; }
     public required ISendReceiptSink Receipts { get; init; }
     public required IMediaStore Media { get; init; }
     public required IMediaImporter MediaImporter { get; init; }
@@ -24,7 +26,7 @@ public sealed record PluginHostServices
 }
 
 /// <summary>一个加载代次的唯一生命周期所有者，登记调用、任务及资源。</summary>
-internal sealed class PluginGeneration : IPluginContext, IHandlerRegistry, IPluginTaskScope, IAdapterRegistry
+internal sealed class PluginGeneration : IPluginContext, IHandlerRegistry, IPluginTaskScope, IAdapterRegistry, IModelProviderRegistry
 {
     private readonly object _gate = new();
     private readonly PluginManifest _manifest;
@@ -37,6 +39,9 @@ internal sealed class PluginGeneration : IPluginContext, IHandlerRegistry, IPlug
     private readonly HashSet<Task> _jobs = [];
     private readonly HashSet<OwnedResource> _resources = [];
     private readonly AdapterDirectory _adapters;
+    private readonly ModelProviderDirectory _modelProviders;
+    private readonly IModelModule _models;
+    private readonly List<ModelProviderRegistration> _modelRegistrations = [];
     private readonly List<AdapterRegistration> _adapterRegistrations = [];
     private readonly TaskCompletionSource _activated = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private PluginLoadContext? _loadContext;
@@ -56,6 +61,14 @@ internal sealed class PluginGeneration : IPluginContext, IHandlerRegistry, IPlug
     public ISendReceiptSink Receipts { get; }
     public IPlatformOperations Platform => _adapters;
     public IAdapterRegistry Adapters => this;
+    public IModelProviderRegistry ModelProviders => this;
+    public IModelService Models => _models;
+    public IModelCatalog ModelCatalog => _models.Catalog;
+    public IConversationProfileService Profiles => _models.Profiles;
+    public IConversationContextService ConversationContext => _models.Contexts;
+    public IMediaTranscriptionService MediaTranscription => _models.Transcriptions;
+    public IMediaRepresentationService MediaRepresentation => _models.Representations;
+    public IModelCallHistory ModelCalls => _models.Calls;
     public IMediaStore Media { get; }
     public IMediaImporter MediaImporter { get; }
     public IStructuredContentStore Contents { get; }
@@ -80,6 +93,8 @@ internal sealed class PluginGeneration : IPluginContext, IHandlerRegistry, IPlug
         EventIngress = services.EventIngress;
         Receipts = services.Receipts;
         _adapters = services.Adapters;
+        _modelProviders = services.ModelProviders;
+        _models = services.Models;
         Media = services.Media;
         MediaImporter = services.MediaImporter;
         Contents = services.Contents;
@@ -109,6 +124,8 @@ internal sealed class PluginGeneration : IPluginContext, IHandlerRegistry, IPlug
         {
             if (_state != PluginState.Loading) throw new InvalidOperationException("插件初始化状态已发生变化。");
             _adapters.Publish(this, _adapterRegistrations);
+            try { _modelProviders.Publish(this, _modelRegistrations); }
+            catch { _adapters.Withdraw(Id); throw; }
             _state = PluginState.Active;
             _activated.TrySetResult();
         }
@@ -143,6 +160,19 @@ internal sealed class PluginGeneration : IPluginContext, IHandlerRegistry, IPlug
 
     /// <summary>只通知网络能力变化，不独立切换插件状态。</summary>
     public void NotifyChanged() => _adapters.NotifyChanged();
+
+    /// <summary>协议能力只在初始化暂存，不允许运行中改变注册集合。</summary>
+    public void Register(ModelProviderRegistration registration)
+    {
+        ArgumentNullException.ThrowIfNull(registration.Driver);
+        if (!Enum.IsDefined(registration.Protocol)) throw new ArgumentException("模型协议无效。");
+        lock (_gate)
+        {
+            if (_state != PluginState.Loading) throw new InvalidOperationException("提供商只能在初始化时注册。");
+            if (_modelRegistrations.Any(item => item.Protocol == registration.Protocol)) throw new ArgumentException("协议重复注册。");
+            _modelRegistrations.Add(registration);
+        }
+    }
 
     /// <summary>登记运行任务，等待初始化成功后再启动网络连接。</summary>
     public Task RunAfterActivation(Func<CancellationToken, Task> operation) => Run(token => WaitForActivationAsync(operation, token));
@@ -206,6 +236,7 @@ internal sealed class PluginGeneration : IPluginContext, IHandlerRegistry, IPlug
             {
                 _state = PluginState.Stopping;
                 _adapters.Withdraw(Id);
+                _modelProviders.Withdraw(Id);
                 _stopTask = Task.Run(CleanupAsync);
             }
             stop = _stopTask;
@@ -278,6 +309,7 @@ internal sealed class PluginGeneration : IPluginContext, IHandlerRegistry, IPlug
             _instance = null;
             _bindings.Clear();
             _adapterRegistrations.Clear();
+            _modelRegistrations.Clear();
             _stopTask = null;
         }
         _lifetime.Dispose();

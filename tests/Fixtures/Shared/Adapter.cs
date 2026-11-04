@@ -24,6 +24,20 @@ public sealed class Adapter : IAdapterDriver
     /// <summary>返回定义在可回收程序集内的流，证明打开流会保留代次资格。</summary>
     public Task<MediaSourceRead> ResolveMediaAsync(MediaSource source, CancellationToken cancellationToken) =>
         Task.FromResult(new MediaSourceRead { Content = new PluginStream(), Representation = JsonSerializer.SerializeToElement(new Dictionary<string, object> { ["format"] = "synthetic", ["original"] = true }) });
+    /// <summary>提供有效的单采样 PCM WAV，用于验证派生格式读取和代次归属。</summary>
+    public Task<MediaSourceRead> ResolveRepresentationAsync(MediaSource source, string format, CancellationToken cancellationToken)
+    {
+        if (format != "wav") throw new MediaAcquisitionException("测试转换只提供 WAV。");
+        MemoryStream stream = new();
+        using (BinaryWriter writer = new(stream, Encoding.ASCII, leaveOpen: true))
+        {
+            writer.Write("RIFF"u8); writer.Write(38); writer.Write("WAVEfmt "u8); writer.Write(16);
+            writer.Write((short)1); writer.Write((short)1); writer.Write(16000); writer.Write(32000);
+            writer.Write((short)2); writer.Write((short)16); writer.Write("data"u8); writer.Write(2); writer.Write((short)0);
+        }
+        stream.Position = 0;
+        return Task.FromResult(new MediaSourceRead { Content = stream });
+    }
     /// <summary>重复提交相同节点位置，测试保存恢复不会重复创建媒体。</summary>
     public async Task ExpandContentAsync(StructuredContentSnapshot current, Func<ContentExpansion, CancellationToken, Task> save, CancellationToken cancellationToken)
     {

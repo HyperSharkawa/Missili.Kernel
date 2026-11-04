@@ -1,0 +1,7 @@
+{
+  "steps": [
+    { "model": "synthetic-primary", "status": 500 },
+    { "model": "synthetic-fallback", "textParts": ["这是", "备用模型的完整合成回复。"], "fragmentBytes": 3 }
+  ],
+  "default": { "text": "后续合成模型回复。" }
+}

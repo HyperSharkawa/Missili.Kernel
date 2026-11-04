@@ -1,10 +1,10 @@
 # 编写 Missili 编译插件
 
-插件引用 `Missili.Abstractions`，目标框架为 `net10.0`，实现具有公开无参构造函数的 `IPlugin`。可直接从 `samples` 的两个工程开始。
+插件引用 `Missili.Abstractions`，目标框架为 `net10.0`，实现具有公开无参构造函数的 `IPlugin`。可直接从 `samples` 的关键词、历史查询或模型测试回复工程开始。
 
 ## 包与初始化
 
-清单字段为 `schemaVersion`、`id`、`name`、`version`、`entryAssembly`、`entryType`、`contractVersion`，以及可选的 `maxConcurrency`。清单格式 `schemaVersion` 为 1，插件契约 `contractVersion` 为 **2**。旧插件需要针对新版共享契约重新编译；宿主不提供版本 1 包装层。
+清单字段为 `schemaVersion`、`id`、`name`、`version`、`entryAssembly`、`entryType`、`contractVersion`，以及可选的 `maxConcurrency`。清单格式 `schemaVersion` 为 1，插件契约 `contractVersion` 为 **3**。旧插件需要针对新版共享契约重新编译；宿主不提供版本 1、2 包装层。
 
 - `id` 是稳定身份，不能随展示名称或版本变化。
 - `entryAssembly` 是包内相对 DLL 路径，`entryType` 是完整 CLR 类型名。
@@ -57,6 +57,8 @@
 
 网络连接等需要初始化完成后运行的任务使用 `context.Tasks.RunAfterActivation`。适配器在初始化中通过 `context.Adapters.Register` 暂存，全部成功后一起发布；初始化阶段不等待远端上线。状态变化调用 `NotifyChanged()`，用于恢复等待适配器的归档工作。
 
+契约 3 新增 `context.ModelProviders.Register`：模型协议驱动同样在初始化中暂存，随代次发布和撤销。模型网络调用使用独立资格，不重复占用消息处理器额度。驱动不得把 SDK 类型、异常对象或反射序列化元数据放进宿主长期缓存。普通插件使用 `context.Models`、`Profiles`、`ConversationContext`、`MediaTranscription`、`MediaRepresentation` 和 `ModelCalls`，实际消费者与完整配置见 [模型接入说明](models.md)。
+
 `StopAsync` 用于通知插件自有工作停止，可能与正在取消的调用并行。不要在仍有调用使用资源时自行破坏共享状态；登记资源会在在途工作结束后由宿主回收。
 
 重载先停止旧代次接单，再取消并等待现有工作。默认 30 秒后仍未退出则重载失败，旧插件保持不可接单，其他插件继续运行。不会强制中止线程、并行启动相同插件新版本或自动回滚旧版本。
@@ -81,7 +83,7 @@
 
 `IMediaTranscriptionStore` 只存储当前成功转述与最近失败信息。缓存键由内容键和转述类型组成，更换模型或提示词不会自动失效。更新必须携带读取到的修订号；冲突后重新读取，不直接覆盖。
 
-当前阶段没有实际识图、STT 或视频转述提供商，不要把“没有转述记录”当作错误。
+`context.MediaTranscription` 提供实际识图和 STT 协调，成功缓存、显式刷新和共享取消由框架管理；`GetAsync` 只读，`EnsureAsync` 才会执行模型调用。视频仅使用标题与类型占位。转述没有持久任务或跨进程执行游标，重启按没有成功结果重新检查。
 
 ## 历史与发送
 

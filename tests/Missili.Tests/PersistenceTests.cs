@@ -140,7 +140,7 @@ public sealed class PersistenceTests
         await fixture.Store.CompleteMediaAsync(id, key, 3, "media/objects/aaa", TestContext.Current.CancellationToken);
         Assert.Null(await fixture.Store.GetTranscriptionAsync(key, "image.description", TestContext.Current.CancellationToken));
         TranscriptionSnapshot success = await fixture.Store.SaveTranscriptionAsync(new TranscriptionSnapshot
-        { ContentKey = key, Kind = "image.description", Text = "合成图片", Model = "synthetic", CompletedAt = TestStore.Now }, 0, TestContext.Current.CancellationToken);
+        { ContentKey = key, Kind = "image.description", Text = "合成图片", Sources = [new TranscriptionSource { Model = "synthetic" }], CompletedAt = TestStore.Now }, 0, TestContext.Current.CancellationToken);
         TranscriptionSnapshot failure = await fixture.Store.RecordTranscriptionFailureAsync(key, "image.description", "测试失败", success.Revision, TestContext.Current.CancellationToken);
         Assert.Equal(success.Text, failure.Text);
         Assert.Equal("测试失败", failure.LastError);

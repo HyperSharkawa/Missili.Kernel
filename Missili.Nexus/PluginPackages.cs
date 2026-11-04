@@ -28,7 +28,7 @@ public sealed record PluginManifest
         ArgumentException.ThrowIfNullOrWhiteSpace(Name);
         ArgumentException.ThrowIfNullOrWhiteSpace(Version);
         ArgumentException.ThrowIfNullOrWhiteSpace(EntryType);
-        if (SchemaVersion != 1 || ContractVersion != 2) throw new InvalidDataException("不支持的插件清单或契约版本。");
+        if (SchemaVersion != 1 || ContractVersion != 3) throw new InvalidDataException("不支持的插件清单或契约版本。");
         if (!char.IsAsciiLetterOrDigit(Id[0]) || Id.Any(character => !char.IsAsciiLetterOrDigit(character) && character is not ('.' or '-' or '_')))
             throw new InvalidDataException("插件标识只能包含 ASCII 字母、数字、点、短横线和下划线，且必须以字母或数字开头。");
         if (MaxConcurrency.HasValue && (MaxConcurrency < 1 || MaxConcurrency > maximumConcurrency))

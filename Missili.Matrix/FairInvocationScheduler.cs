@@ -32,7 +32,11 @@ public sealed class FairInvocationScheduler : IInvocationScheduler
     public int PendingCount { get { lock (_gate) return _groups.Values.Sum(group => group.Pending.Count); } }
 
     /// <summary>先等待排队容量，再创建工作；返回的内层任务表示实际调用结果。</summary>
-    public async Task<Task<T>> EnqueueAsync<T>(string pluginId, int maxConcurrency, Func<CancellationToken, Task<T>> operation, CancellationToken cancellationToken)
+    public Task<Task<T>> EnqueueAsync<T>(string pluginId, int maxConcurrency, Func<CancellationToken, Task<T>> operation, CancellationToken cancellationToken) =>
+        EnqueueVersionedAsync(pluginId, maxConcurrency, 0, operation, cancellationToken);
+
+    /// <summary>配置修订可更新后续启动额度；旧请求重试不能回退新的并发配置。</summary>
+    public async Task<Task<T>> EnqueueVersionedAsync<T>(string pluginId, int maxConcurrency, long quotaRevision, Func<CancellationToken, Task<T>> operation, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(pluginId);
         ArgumentNullException.ThrowIfNull(operation);
@@ -49,11 +53,13 @@ public sealed class FairInvocationScheduler : IInvocationScheduler
             }
             if (!_groups.TryGetValue(pluginId, out Group? group))
             {
-                group = new Group { Id = pluginId, Limit = maxConcurrency };
+                group = new Group { Id = pluginId, Limit = maxConcurrency, Revision = quotaRevision };
                 group.Rotation = _rotation.AddLast(group);
                 _groups.Add(pluginId, group);
             }
-            else if (group.Limit != maxConcurrency)
+            else if (quotaRevision > group.Revision)
+            { group.Limit = maxConcurrency; group.Revision = quotaRevision; }
+            else if (group.Limit != maxConcurrency && quotaRevision == group.Revision)
             {
                 _capacity.Release();
                 throw new InvalidOperationException("同一插件的并发限制必须一致。");
@@ -171,7 +177,8 @@ public sealed class FairInvocationScheduler : IInvocationScheduler
     private sealed class Group
     {
         public required string Id { get; init; }
-        public required int Limit { get; init; }
+        public required int Limit { get; set; }
+        public long Revision { get; set; }
         public int Active { get; set; }
         public LinkedList<Work> Pending { get; } = new();
         public LinkedListNode<Group>? Rotation { get; set; }

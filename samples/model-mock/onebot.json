@@ -1,0 +1,30 @@
+{
+  "mode": "server",
+  "url": "http://127.0.0.1:24081",
+  "layout": "Universal",
+  "selfId": 10001,
+  "steps": [
+    { "operation": "awaitAction", "action": "get_login_info" },
+    { "operation": "signal", "name": "go" },
+    {
+      "operation": "event",
+      "event": {
+        "time": 1700000000, "self_id": 10001, "post_type": "message", "message_type": "group", "sub_type": "normal",
+        "message_id": 1, "group_id": 20001, "user_id": 30001,
+        "message": [{ "type": "text", "data": { "text": "请记住这条合成背景资料。" } }],
+        "raw_message": "请记住这条合成背景资料。", "font": 0, "sender": { "user_id": 30001, "nickname": "测试用户" }
+      }
+    },
+    {
+      "operation": "event",
+      "event": {
+        "time": 1700000001, "self_id": 10001, "post_type": "message", "message_type": "group", "sub_type": "normal",
+        "message_id": 2, "group_id": 20001, "user_id": 30001,
+        "message": [{ "type": "text", "data": { "text": "/model 根据前面的资料回复。" } }],
+        "raw_message": "/model 根据前面的资料回复。", "font": 0, "sender": { "user_id": 30001, "nickname": "测试用户" }
+      }
+    },
+    { "operation": "awaitAction", "action": "send_group_msg" },
+    { "operation": "assertCalls", "action": "send_group_msg", "count": 1 }
+  ]
+}

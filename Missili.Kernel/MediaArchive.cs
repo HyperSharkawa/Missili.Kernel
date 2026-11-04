@@ -54,6 +54,7 @@ public sealed class MediaArchive : IMediaStore, IMediaImporter, IAsyncDisposable
     }
 
     public bool IsHealthy => Volatile.Read(ref _failure) is null;
+    public event Action? ArchiveCompleted;
 
     /// <summary>在数据库恢复完成后启动固定工作数，并处理已有待归档记录。</summary>
     public Task StartAsync(CancellationToken cancellationToken = default)
@@ -361,6 +362,7 @@ public sealed class MediaArchive : IMediaStore, IMediaImporter, IAsyncDisposable
         {
             if (_waiters.TryGetValue(id, out WaitSlot? slot)) slot.Completion.TrySetResult(error);
         }
+        ArchiveCompleted?.Invoke();
     }
 
     /// <summary>状态无法持久化时明确使归档服务不可用，防止读取者无限等待。</summary>
@@ -393,6 +395,7 @@ public sealed class MediaArchive : IMediaStore, IMediaImporter, IAsyncDisposable
         _http.Dispose();
         _stop.Dispose();
         _slots.Dispose();
+        ArchiveCompleted = null;
     }
 
     /// <summary>等待数量归零即移除，不累计已完成媒体的 Task。</summary>

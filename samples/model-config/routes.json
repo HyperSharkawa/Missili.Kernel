@@ -1,0 +1,6 @@
+{
+  "defaultProfileId": "default",
+  "routes": [
+    { "adapterId": "qq-test", "platformId": "qq", "botAccountId": "10001", "conversationKind": "private", "conversationId": "30001", "profileId": "private" }
+  ]
+}

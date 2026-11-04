@@ -94,13 +94,21 @@ public sealed class AdapterDirectory : IAdapterRuntime
     }
 
     /// <summary>流的实际释放才结束解析调用，重载不会提前丢失仍在读取的插件代码。</summary>
-    public async Task<MediaSourceRead> ResolveMediaAsync(MediaSource source, CancellationToken cancellationToken)
+    public Task<MediaSourceRead> ResolveMediaAsync(MediaSource source, CancellationToken cancellationToken) => ReadMediaAsync(source, null, cancellationToken);
+
+    /// <summary>转换请求复用已有流资格包装，取消后等待插件真正停止读取。</summary>
+    public Task<MediaSourceRead> ResolveRepresentationAsync(MediaSource source, string format, CancellationToken cancellationToken)
+    { ArgumentException.ThrowIfNullOrWhiteSpace(format); return ReadMediaAsync(source, format, cancellationToken); }
+
+    /// <summary>普通获取与格式转换共享代次、错误和流释放语义。</summary>
+    private async Task<MediaSourceRead> ReadMediaAsync(MediaSource source, string? format, CancellationToken cancellationToken)
     {
         Call call = Acquire(source.AdapterId!, source.BotAccountId) ?? throw new AdapterUnavailableException();
         CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, call.Lease.LifetimeToken);
         try
         {
-            MediaSourceRead result = await call.Driver.ResolveMediaAsync(source, linked.Token).ConfigureAwait(false);
+            MediaSourceRead result = format is null ? await call.Driver.ResolveMediaAsync(source, linked.Token).ConfigureAwait(false)
+                : await call.Driver.ResolveRepresentationAsync(source, format, linked.Token).ConfigureAwait(false);
             if ((result.Content is null) == (result.Redirect is null))
             { await result.DisposeAsync().ConfigureAwait(false); throw new InvalidDataException("媒体解析必须返回流或直接来源之一。"); }
             if (result.Content is not null)

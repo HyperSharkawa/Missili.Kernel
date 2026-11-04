@@ -5,5 +5,5 @@
   "version": "0.2.0",
   "entryAssembly": "Missili.Adapters.OneBot.dll",
   "entryType": "Missili.Adapters.OneBot.Entry",
-  "contractVersion": 2
+  "contractVersion": 3
 }

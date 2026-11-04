@@ -1,0 +1,14 @@
+{
+  "providers": [
+    { "id": "chat", "protocol": "ChatCompletions", "baseUrl": "http://127.0.0.1:24080/v1", "apiKeyEnvironmentVariable": "MISSILI_MODEL_MOCK_KEY" },
+    { "id": "responses", "protocol": "Responses", "baseUrl": "http://127.0.0.1:24080/v1", "apiKeyEnvironmentVariable": "MISSILI_MODEL_MOCK_KEY" },
+    { "id": "anthropic", "protocol": "Anthropic", "baseUrl": "http://127.0.0.1:24080", "apiKeyEnvironmentVariable": "MISSILI_MODEL_MOCK_KEY" },
+    { "id": "speech", "protocol": "AudioTranscription", "baseUrl": "http://127.0.0.1:24080/v1", "apiKeyEnvironmentVariable": "MISSILI_MODEL_MOCK_KEY" }
+  ],
+  "models": [
+    { "id": "primary", "providerId": "chat", "name": "synthetic-primary", "images": true, "tools": true },
+    { "id": "fallback", "providerId": "responses", "name": "synthetic-fallback", "images": true, "tools": true },
+    { "id": "anthropic", "providerId": "anthropic", "name": "synthetic-anthropic", "images": true, "tools": true },
+    { "id": "speech", "providerId": "speech", "name": "synthetic-transcription", "streaming": false, "audioFormats": ["wav", "mp3"] }
+  ]
+}

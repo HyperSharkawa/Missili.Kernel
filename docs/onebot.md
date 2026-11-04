@@ -88,7 +88,7 @@
 | 心跳、生命周期 | 更新运行状态，不逐条保存业务历史 |
 | 未知消息段 | `onebot11.*` 类型及原载荷保留，未提供编码能力时拒绝发送 |
 | 平台 API | 通过 `echo` 关联；查询、撤回、请求处理等经平台服务调用 |
-| HTTP API、HTTP POST 上报 | 本阶段不提供 |
+| HTTP API、HTTP POST 上报 | 当前不提供 |
 
 规范没有视频文件查询接口。视频没有直接 HTTP 来源或显式本地映射时，归档会说明不可取得原件。标准 `get_image`、`get_record` 返回对端路径，不代表 Missili 能直接读取该路径。
 
@@ -99,7 +99,12 @@
 - `get_record` 的 `data.base64` 返回；记录为转换后的指定格式。
 - `message_sent` 自身发送观察事件，精确关联平台消息标识。
 
-兼容依据来自既有 SnowLuma 适配器的脱敏转发测试和语音处理代码，已作为独立测试固定下来。后续已按用户授权执行真实账号联调，18 个功能场景通过；私聊撤回身份不一致和部分嵌套发送形式限制单独保留，详见 [真实联调记录](onebot-live-validation.md)。
+兼容行为依据已有适配器的脱敏转发样本和语音处理代码，标准形态与扩展形态分别测试。
+
+已知的实现限制会影响以下操作：
+
+- SnowLuma 2.4.0-node 的私聊撤回存在 `friend_recall.message_id` 与原消息标识不一致的情况。无法精确关联时，Missili 保存撤回事件并保留原消息状态，不按时间或正文猜测匹配。
+- 在 SnowLuma 2.0.2-node 中，将普通文字、图片与内嵌 `node` 混在同一节点 `content` 中的发送形式存在 `retcode=1400` 拒绝情况。可使用标准引用节点 `{"type":"node","data":{"id":"已有消息 ID"}}` 构造嵌套转发；适配器不自动拆分消息。
 
 样本来源为 `MaiBot-Snowluma-Adapter-For-0.12.2` 中的 `tests/test_forward_message.py`、`src/recv_handler/message_handler.py` 和 `src/utils.py`。本项目对应验收位于 `OneBotArchiveTests`；标准夹具独立位于协议和消息段测试中。
 
@@ -172,6 +177,6 @@ dotnet run --project tools/Missili.OneBot.Mock -- tools/Missili.OneBot.Mock/scen
 
 启动应用新的 EF migration，保留初始迁移。四种旧段转换为字符串，旧媒体关联迁到关系表，来源 URL 转为版本化描述；原消息标识、原件路径、转述和用户排序保留。禁止删库重建升级。
 
-仅仍可完整表达为旧模型的数据允许降级；出现扩展段、平台事件、多媒体或别名等新语义时，降级在变更前拒绝，防止有损转换。插件契约版本 2 的改动详见 [插件开发说明](plugin-development.md)。
+仅仍可完整表达为旧模型的数据允许降级；出现扩展段、平台事件、多媒体或别名等新语义时，降级在变更前拒绝，防止有损转换。当前插件契约为版本 3，旧插件需适配共享契约后重新编译，详见 [插件开发说明](plugin-development.md)。
 
 技术参考：[WebSocket 标准](https://github.com/botuniverse/onebot-11/blob/d4456ee706f9ada9c2dfde56a2bcfc69752600e4/communication/ws.md)、[反向连接](https://github.com/botuniverse/onebot-11/blob/d4456ee706f9ada9c2dfde56a2bcfc69752600e4/communication/ws-reverse.md)、[消息段](https://github.com/botuniverse/onebot-11/blob/d4456ee706f9ada9c2dfde56a2bcfc69752600e4/message/segment.md)、[ASP.NET Core 请求生命周期](https://learn.microsoft.com/aspnet/core/fundamentals/websockets?view=aspnetcore-10.0)。

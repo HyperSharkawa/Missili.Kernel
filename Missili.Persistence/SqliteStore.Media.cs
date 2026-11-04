@@ -145,9 +145,7 @@ public sealed partial class SqliteStore
         return ChangeTranscriptionAsync(result.ContentKey, result.Kind, expectedRevision, row =>
         {
             row.Text = result.Text;
-            row.Provider = result.Provider;
-            row.Model = result.Model;
-            row.Prompt = result.Prompt;
+            row.SourcesJson = JsonSerializer.Serialize(result.Sources);
             row.CompletedAt = result.CompletedAt.Value.ToUnixTimeMilliseconds();
             row.LastError = null;
         }, cancellationToken);
@@ -207,9 +205,7 @@ public sealed partial class SqliteStore
         ContentKey = row.ContentKey,
         Kind = row.Kind,
         Text = row.Text,
-        Provider = row.Provider,
-        Model = row.Model,
-        Prompt = row.Prompt,
+        Sources = JsonSerializer.Deserialize<System.Collections.Immutable.ImmutableArray<TranscriptionSource>>(row.SourcesJson),
         CompletedAt = row.CompletedAt.HasValue ? DateTimeOffset.FromUnixTimeMilliseconds(row.CompletedAt.Value) : null,
         LastError = row.LastError,
         Revision = row.Revision

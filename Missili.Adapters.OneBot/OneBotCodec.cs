@@ -115,7 +115,14 @@ internal sealed class OneBotCodec
                 string? file = OptionalString(data, "file");
                 string? url = OptionalString(data, "url");
                 MediaSource source;
-                if (url is not null && Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) && uri.Scheme is "http" or "https") source = MediaSource.Http(uri);
+                if (url is not null && Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) && uri.Scheme is "http" or "https") source = new MediaSource
+                {
+                    Kind = "http",
+                    AdapterId = address.AdapterId,
+                    BotAccountId = address.BotAccountId,
+                    // HTTP 仍由宿主直接下载；保留文件身份供以后显式请求 WAV，不能把 URL 当作内容键。
+                    Data = JsonSerializer.SerializeToElement(new Dictionary<string, string?> { ["url"] = uri.AbsoluteUri, ["file"] = file, ["type"] = type })
+                };
                 else source = new MediaSource
                 {
                     Kind = "onebot11.media",

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><EnableDynamicLoading>true</EnableDynamicLoading></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../providers/Shared/*.cs" Link="Shared/%(Filename)%(Extension)" />
+    <ProjectReference Include="../Missili.Abstractions/Missili.Abstractions.csproj" />
+    <PackageReference Include="Anthropic" Version="13.4.0" />
+    <None Include="plugin.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

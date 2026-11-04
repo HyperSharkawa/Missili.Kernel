@@ -1,0 +1,6 @@
+{
+  "allowedConversations": [
+    { "adapterId": "qq-test", "platformId": "qq", "botAccountId": "10001", "conversationKind": "group", "conversationId": "20001" },
+    { "adapterId": "qq-test", "platformId": "qq", "botAccountId": "10001", "conversationKind": "private", "conversationId": "30001" }
+  ]
+}

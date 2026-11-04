@@ -1,0 +1,5 @@
+{
+  "instances": [
+    { "id": "qq-test", "botAccountId": "10001", "direction": "Forward", "layout": "Universal", "url": "ws://127.0.0.1:24081/", "authentication": "None" }
+  ]
+}

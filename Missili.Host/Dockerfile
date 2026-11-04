@@ -13,12 +13,17 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
 COPY ["Directory.Build.props", "./"]
+COPY ["NuGet.Config", "./"]
+COPY ["third-party/nuget/", "third-party/nuget/"]
 COPY ["Missili.Abstractions/Missili.Abstractions.csproj", "Missili.Abstractions/"]
 COPY ["Missili.Kernel/Missili.Kernel.csproj", "Missili.Kernel/"]
 COPY ["Missili.Matrix/Missili.Matrix.csproj", "Missili.Matrix/"]
+COPY ["Missili.Models/Missili.Models.csproj", "Missili.Models/"]
 COPY ["Missili.Nexus/Missili.Nexus.csproj", "Missili.Nexus/"]
 COPY ["Missili.Persistence/Missili.Persistence.csproj", "Missili.Persistence/"]
 COPY ["Missili.Adapters.OneBot/Missili.Adapters.OneBot.csproj", "Missili.Adapters.OneBot/"]
+COPY ["Missili.Providers.OpenAI/Missili.Providers.OpenAI.csproj", "Missili.Providers.OpenAI/"]
+COPY ["Missili.Providers.Anthropic/Missili.Providers.Anthropic.csproj", "Missili.Providers.Anthropic/"]
 COPY ["Missili.Host/Missili.Host.csproj", "Missili.Host/"]
 RUN dotnet restore "./Missili.Host/Missili.Host.csproj"
 COPY . .

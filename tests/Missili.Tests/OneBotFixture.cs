@@ -26,13 +26,18 @@ internal sealed class OneBotFixture : IAsyncDisposable
     public Dictionary<string, object> Settings { get; } = new();
 
     /// <summary>使用生产宿主入口，仅覆盖数据目录、监听地址与日志输出。</summary>
-    private OneBotFixture(TimeProvider? clock)
+    private OneBotFixture(TimeProvider? clock, bool enableModels)
     {
         Root = Path.Combine(Path.GetTempPath(), "Missili.Tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Root);
         _application = Missili.Host.Program.BuildApplication([], builder =>
         {
-            builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["Infrastructure:DataDirectory"] = Root });
+            builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Infrastructure:DataDirectory"] = Root,
+                ["Models:Enabled"] = enableModels.ToString(),
+                ["Models:ConfigurationDirectory"] = Path.Combine(Root, "model-config")
+            });
             builder.WebHost.UseUrls("http://127.0.0.1:0"); builder.Logging.ClearProviders();
             if (clock is not null) builder.Services.AddSingleton(clock);
         });
@@ -40,12 +45,14 @@ internal sealed class OneBotFixture : IAsyncDisposable
 
     /// <summary>启动真实宿主和两端连接，配置仅含合成账号与测试 Token。</summary>
     public static async Task<OneBotFixture> CreateAsync(bool reverse, bool split, CancellationToken token,
-        Action<Dictionary<string, object>>? configure = null, Action<MockPeer>? configurePeer = null, bool connect = true, TimeProvider? clock = null)
+        Action<Dictionary<string, object>>? configure = null, Action<MockPeer>? configurePeer = null, bool connect = true, TimeProvider? clock = null,
+        ModelConfiguration? models = null)
     {
-        OneBotFixture fixture = new(clock);
+        OneBotFixture fixture = new(clock, models is not null);
         try
         {
             fixture.Peer.Token = "synthetic-token";
+            if (models is not null) await RuntimeFixture.WriteModelConfigurationAsync(fixture.Root, models, token);
             configurePeer?.Invoke(fixture.Peer);
             await fixture._application.StartAsync(token);
             fixture.HostUrl = fixture._application.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();

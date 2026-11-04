@@ -36,6 +36,7 @@ internal sealed class InfrastructureLifetime : IHostedLifecycleService
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception exception) { _logger.LogError(exception, "已启用插件加载失败，继续启动其他插件"); }
         }
+        _runtime.Models.StartBackgroundScan();
     }
 
     /// <summary>请求有序停止，存储关闭由运行时实际工作退出后执行。</summary>

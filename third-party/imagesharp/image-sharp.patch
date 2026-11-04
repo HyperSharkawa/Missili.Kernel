@@ -1,0 +1,57 @@
+diff --git a/src/ImageSharp/Formats/Png/PngFrameMetadata.cs b/src/ImageSharp/Formats/Png/PngFrameMetadata.cs
+index 7e0b56b..4016973 100644
+--- a/src/ImageSharp/Formats/Png/PngFrameMetadata.cs
++++ b/src/ImageSharp/Formats/Png/PngFrameMetadata.cs
+@@ -54,7 +54,10 @@ private PngFrameMetadata(PngFrameMetadata other)
+     /// <param name="frameControl">The chunk to create an instance from.</param>
+     internal void FromChunk(in FrameControl frameControl)
+     {
+-        this.FrameDelay = new Rational(frameControl.DelayNumerator, frameControl.DelayDenominator);
++        // Modified for Missili: PNG specifies that a zero delay denominator means 100.
++        // Normalize before Rational simplifies the fraction and loses the numerator.
++        // https://www.w3.org/TR/png/#11fcTL
++        this.FrameDelay = new Rational(frameControl.DelayNumerator, frameControl.DelayDenominator == 0 ? 100u : frameControl.DelayDenominator);
+         this.DisposalMode = frameControl.DisposalMode;
+         this.BlendMode = frameControl.BlendMode;
+     }
+diff --git a/src/ImageSharp/ImageSharp.csproj b/src/ImageSharp/ImageSharp.csproj
+index 9f545fc..59f4ea5 100644
+--- a/src/ImageSharp/ImageSharp.csproj
++++ b/src/ImageSharp/ImageSharp.csproj
+@@ -5,13 +5,18 @@
+     <AssemblyName>SixLabors.ImageSharp</AssemblyName>
+     <AssemblyTitle>SixLabors.ImageSharp</AssemblyTitle>
+     <RootNamespace>SixLabors.ImageSharp</RootNamespace>
+-    <PackageId>SixLabors.ImageSharp</PackageId>
+-    <PackageIcon>sixlabors.imagesharp.128.png</PackageIcon>
+-    <PackageLicenseFile>LICENSE</PackageLicenseFile>
++    <!-- Missili packaging changes; see MISSILI-BUILD.md. -->
++    <PackageId>Missili.ThirdParty.ImageSharp</PackageId>
++    <Version>4.1.3-missili.2</Version>
++    <AssemblyVersion>4.1.3.0</AssemblyVersion>
++    <FileVersion>4.1.3.0</FileVersion>
++    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
++    <PackageReadmeFile>MISSILI-BUILD.md</PackageReadmeFile>
++    <RepositoryCommit>751037d0c6384c97e77ee1abd86e2203ae8dbd95</RepositoryCommit>
+     <RepositoryUrl Condition="'$(RepositoryUrl)' == ''">https://github.com/SixLabors/ImageSharp/</RepositoryUrl>
+     <PackageProjectUrl>$(RepositoryUrl)</PackageProjectUrl>
+     <PackageTags>Image Resize Crop Gif Jpg Jpeg Bitmap Pbm Png Tga Tiff WebP NetCore</PackageTags>
+-    <Description>A new, fully featured, fully managed, cross-platform, 2D graphics API for .NET</Description>
++    <Description>ImageSharp 4.1.3 built from source for Missili. Omits license-key validation and fixes APNG zero-denominator frame timing.</Description>
+     <Configurations>Debug;Release</Configurations>
+     <IsTrimmable>true</IsTrimmable>
+   </PropertyGroup>
+@@ -42,8 +47,11 @@
+ 
+   <ItemGroup>
+     <None Include="..\..\LICENSE" Pack="true" PackagePath="" />
+-    <None Include="..\..\shared-infrastructure\branding\icons\imagesharp\sixlabors.imagesharp.128.png" Pack="true" PackagePath="" />
+-    <None Include="..\..\SixLabors.ImageSharp.props" Pack="true" PackagePath="build" />
++    <None Include="..\..\LICENSE-APACHE-2.0.txt" Pack="true" PackagePath="" />
++    <None Include="..\..\THIRD-PARTY-NOTICES.TXT" Pack="true" PackagePath="" />
++    <None Include="..\..\shared-infrastructure\THIRD-PARTY-NOTICES.TXT" Pack="true" PackagePath="shared-infrastructure/" />
++    <None Include="..\..\MISSILI-BUILD.md" Pack="true" PackagePath="" />
++    <None Include="..\..\SixLabors.ImageSharp.props" Pack="true" PackagePath="build/Missili.ThirdParty.ImageSharp.props" />
+   </ItemGroup>
+ 
+   <ItemGroup>

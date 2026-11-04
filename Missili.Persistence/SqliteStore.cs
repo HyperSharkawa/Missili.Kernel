@@ -7,7 +7,7 @@ using Missili.Abstractions;
 namespace Missili.Persistence;
 
 /// <summary>真实 SQLite 存储，写入串行化、读取有界且每项拥有独立上下文。</summary>
-public sealed partial class SqliteStore : IInfrastructureStore
+public sealed partial class SqliteStore : IInfrastructureStore, IModelStore
 {
     private readonly DbContextOptions<MissiliDbContext> _options;
     private readonly DatabaseExecutor _writes;
@@ -29,6 +29,10 @@ public sealed partial class SqliteStore : IInfrastructureStore
     public Task InitializeAsync(Guid runId, CancellationToken cancellationToken) => WriteAsync(database =>
     {
         database.Database.Migrate();
+        database.ModelAttempts.Where(item => item.Call.RunId != runId && item.State == ModelCallState.Running)
+            .ExecuteUpdate(setters => setters.SetProperty(item => item.State, ModelCallState.Interrupted));
+        database.ModelCalls.Where(item => item.RunId != runId && item.State == ModelCallState.Running)
+            .ExecuteUpdate(setters => setters.SetProperty(item => item.State, ModelCallState.Interrupted));
         database.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
         database.Messages.Where(item => item.RunId != runId &&
             (item.Processing == ProcessingState.Pending || item.Processing == ProcessingState.Running))

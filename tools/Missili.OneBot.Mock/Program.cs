@@ -77,7 +77,14 @@ public static class Program
                     {
                         Console.WriteLine("等待输入控制信号：" + step.GetProperty("name").GetString());
                         string expected = step.GetProperty("name").GetString()!;
-                        while (await Console.In.ReadLineAsync(stop.Token) != expected) { }
+                        // Console 的同步读取不能阻止进程停止时关闭真实 WebSocket 连接。
+                        // https://github.com/dotnet/runtime/blob/v10.0.0/src/libraries/System.Console/src/System/IO/SyncTextReader.cs
+                        while (true)
+                        {
+                            string input = await Task.Run(Console.ReadLine, stop.Token).WaitAsync(stop.Token)
+                                ?? throw new EndOfStreamException("控制输入已关闭，无法继续等待场景信号。");
+                            if (input == expected) break;
+                        }
                     }
                     else if (operation == "abort") peer.Abort(step.GetProperty("role").GetString()!);
                     else throw new ArgumentException("不支持的 Mock 场景步骤。");

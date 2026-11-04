@@ -1,0 +1,93 @@
+diff --git a/msbuild/props/SixLabors.Src.props b/msbuild/props/SixLabors.Src.props
+index 33a07ae..a71c20a 100644
+--- a/msbuild/props/SixLabors.Src.props
++++ b/msbuild/props/SixLabors.Src.props
+@@ -45,18 +45,8 @@
+     <MinVerVerbosity>normal</MinVerVerbosity>
+   </PropertyGroup>
+ 
+-  <!-- 
+-      Package reference to the license project which is consumed by src projects
+-      This is a dev only reference. See the SixLabors.Src.targets file for usage.
+-   -->
+-  <ItemGroup>
+-    <PackageReference
+-        Include="SixLabors.Licensing"
+-        Version="1.0.3"
+-        PrivateAssets="all"
+-        GeneratePathProperty="true"
+-        Condition="'$(PackageId)' != 'SixLabors.Licensing' and '$(MSBuildProjectName)' != 'SixLabors.Licensing'" />
+-  </ItemGroup>
++  <!-- Missili source build: omit the license-key tooling under the applicable Apache-2.0 grant.
++       Image processing sources and their copyright notices remain unchanged. -->
+ 
+   <!-- Package references and additional files which are consumed by src projects. CI Only -->
+   <ItemGroup Condition="'$(IsContinuousIntegration)'=='true'">
+diff --git a/msbuild/targets/SixLabors.Src.targets b/msbuild/targets/SixLabors.Src.targets
+index ea5f80e..d36d919 100644
+--- a/msbuild/targets/SixLabors.Src.targets
++++ b/msbuild/targets/SixLabors.Src.targets
+@@ -26,61 +26,7 @@
+           DestinationFiles="$(SixLaborsSolutionDirectory).github\copilot-instructions.md" />
+   </Target>
+ 
+-  <!--
+-      This target is responsible for copying licensing files to the licensing NuGet package
+-      to our build output.
+-      See SixLabors.Src.props for the package references.
+-      Hook into NuGet pack.
+-  -->
+-  <PropertyGroup>
+-    <TargetsForTfmSpecificContentInPackage>
+-      $(TargetsForTfmSpecificContentInPackage);_SixLabors_AddLicensingFiles
+-    </TargetsForTfmSpecificContentInPackage>
+-  </PropertyGroup>
+-
+-  <!-- Add files per TFM from the *package cache* only -->
+-  <Target Name="_SixLabors_AddLicensingFiles"
+-          Condition="'$(IsPackable)'=='true'
+-                 and '$(TargetFramework)'!=''
+-                 and $([System.String]::Copy('$(PackageId)').StartsWith('SixLabors.'))
+-                 and '$(PackageId)'!='SixLabors.Licensing'
+-                 and '$(PkgSixLabors_Licensing)'!=''">
+-
+-    <ItemGroup>
+-      <!-- Rename the validator template into the consuming package -->
+-      <TfmSpecificPackageFile Include="$(PkgSixLabors_Licensing)\build\SixLabors.ValidateLicense.targets"
+-                              Condition="Exists('$(PkgSixLabors_Licensing)\build\SixLabors.ValidateLicense.targets')">
+-        <PackagePath>build\$(PackageId).targets</PackagePath>
+-      </TfmSpecificPackageFile>
+-
+-      <!-- SDK 6/7 MSBuild task; newer hosts retain the net8.0 asset below. -->
+-      <TfmSpecificPackageFile Include="$(PkgSixLabors_Licensing)\build\net6.0\SixLabors.Licensing.dll"
+-                              Condition="Exists('$(PkgSixLabors_Licensing)\build\net6.0\SixLabors.Licensing.dll')">
+-        <PackagePath>build\net6.0\SixLabors.Licensing.dll</PackagePath>
+-      </TfmSpecificPackageFile>
+-      <!-- dotnet MSBuild task -->
+-      <TfmSpecificPackageFile Include="$(PkgSixLabors_Licensing)\build\net8.0\SixLabors.Licensing.dll"
+-                              Condition="Exists('$(PkgSixLabors_Licensing)\build\net8.0\SixLabors.Licensing.dll')">
+-        <PackagePath>build\net8.0\SixLabors.Licensing.dll</PackagePath>
+-      </TfmSpecificPackageFile>
+-
+-      <!-- VS/CLR4 MSBuild task -->
+-      <TfmSpecificPackageFile Include="$(PkgSixLabors_Licensing)\build\net472\SixLabors.Licensing.dll"
+-                              Condition="Exists('$(PkgSixLabors_Licensing)\build\net472\SixLabors.Licensing.dll')">
+-        <PackagePath>build\net472\SixLabors.Licensing.dll</PackagePath>
+-      </TfmSpecificPackageFile>
+-    </ItemGroup>
+-  </Target>
+-
+-  <!-- Hard fail if the package path isn't resolvable -->
+-  <Target Name="FailIfLicensingPathMissing" BeforeTargets="Pack"
+-          Condition="'$(IsPackable)'=='true'
+-                 and '$(TargetFramework)'!=''
+-                 and $([System.String]::Copy('$(PackageId)').StartsWith('SixLabors.'))
+-                 and '$(PackageId)'!='SixLabors.Licensing'
+-                 and ( '$(PkgSixLabors_Licensing)'=='' 
+-                       or !Exists('$(PkgSixLabors_Licensing)\build\net8.0\SixLabors.Licensing.dll') )">
+-    <Error Text="Licensing task not found under $(PkgSixLabors_Licensing)\build\net8.0. Ensure the dev-only PackageReference (GeneratePathProperty='true') is present and restore ran." />
+-  </Target>
++  <!-- Missili source build: do not inject license-key validation into the resulting package.
++       The package retains the applicable license text and third-party notices. -->
+ 
+ </Project>

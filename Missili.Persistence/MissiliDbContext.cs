@@ -5,7 +5,7 @@ using Missili.Abstractions;
 namespace Missili.Persistence;
 
 /// <summary>宿主专用 EF 上下文，生命周期限定于单个存储操作。</summary>
-public sealed class MissiliDbContext : DbContext
+public sealed partial class MissiliDbContext : DbContext
 {
     /// <summary>使用外部固定的 SQLite 选项创建上下文，不持有插件类型。</summary>
     public MissiliDbContext(DbContextOptions<MissiliDbContext> options) : base(options) { }
@@ -24,6 +24,7 @@ public sealed class MissiliDbContext : DbContext
     /// <summary>声明实际查询需要的索引、外键和并发约束。</summary>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        ConfigureModels(modelBuilder);
         modelBuilder.Entity<MessageEntity>(entity =>
         {
             entity.ToTable("Messages");
@@ -236,9 +237,7 @@ public sealed class TranscriptionEntity
     public string ContentKey { get; set; } = "";
     public string Kind { get; set; } = "";
     public string? Text { get; set; }
-    public string? Provider { get; set; }
-    public string? Model { get; set; }
-    public string? Prompt { get; set; }
+    public string SourcesJson { get; set; } = "[]";
     public long? CompletedAt { get; set; }
     public string? LastError { get; set; }
     public long Revision { get; set; }

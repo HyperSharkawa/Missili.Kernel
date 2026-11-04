@@ -2,7 +2,7 @@
 
 基于 .NET 10 的插件化 Bot 基础设施，采用 AGPL-3.0 许可证。
 
-当前提供可扩展消息与平台事件持久化、媒体及合并转发归档、用户编排、编译插件热重载及 OneBot v11 适配器。正向、反向 WebSocket 均支持 Universal 和 API／Event 分离布局。协议联调使用独立 Mock；真实 QQ 账号兼容验收单独进行。模型、Agent、MCP 和 WebUI 留待后续阶段。
+当前提供可扩展消息与平台事件持久化、媒体及合并转发归档、用户编排、编译插件热重载、OneBot v11、三种模型对话协议与语音转写。会话按配置档路由，支持批量上下文淘汰、图片压缩切片、动图抽帧及转述成功缓存。协议联调用独立 OneBot／模型 Mock；尚不提供 Agent、MCP 和 WebUI。
 
 ## 构建与运行
 
@@ -23,9 +23,11 @@ dotnet run --project Missili.Host
 - `GET /health/live`：进程存活。
 - `GET /health/ready`：基础设施初始化完成且存储可用。
 
-默认不加载适配器或示例回复插件。发布目录包含 `plugins/onebot` 官方编译包，需明确配置启用。健康响应不包含聊天、配置或本地路径；适配器离线不使存储就绪检查失败。
+默认不启用模型模块、适配器或示例回复插件。发布目录包含 `plugins/onebot`、`plugins/openai`、`plugins/anthropic` 官方编译包，需明确配置启用。健康响应不包含聊天、配置或本地路径；适配器离线不使存储就绪检查失败。
 
 OneBot 配置、能力清单与协议 Mock 见 [OneBot 接入说明](docs/onebot.md)。
+
+模型配置、`/model` 显式回复、媒体转述和双 Mock 联调见 [模型接入说明](docs/models.md)。
 
 ## 数据与配置
 
@@ -34,8 +36,9 @@ OneBot 配置、能力清单与协议 Mock 见 [OneBot 接入说明](docs/onebot
 - `history.db` 保存聊天历史、平台事件、结构化内容、媒体引用、转述结果与用户编排。
 - `media` 保存原件和可恢复的暂存文件。
 - `plugins` 保存安装包和独立运行代次。
+- `model-calls` 保存失败尝试及显式启用的完整调用详情。
 
-历史与媒体默认不自动删除。撤回、删除只标记状态并保留原文。本阶段没有管理员清理入口。
+历史与媒体默认不自动删除。撤回、删除只标记状态并保留原文。当前没有管理员清理入口。
 
 主要初值：消息流程和插件调用全局各最多 32 个；单插件默认最多 4 个调用；媒体下载最多 4 个；SQLite 使用单写工作与最多 4 个并发读取。队列满时等待容量，不通过丢弃消息处理拥塞。
 
@@ -47,6 +50,7 @@ OneBot 配置、能力清单与协议 Mock 见 [OneBot 接入说明](docs/onebot
 
 - [关键词回复](samples/Missili.Sample.Keyword)：只读取文字，不等待媒体原件。
 - [历史查询](samples/Missili.Sample.History)：通过历史服务查询有限记录。
+- [模型测试回复](samples/Missili.Sample.ModelChat)：只在明确允许的会话处理 `/model`，完整生成后统一发送。
 
 关键词示例配置需要 `keyword` 和 `reply` 两个非空字符串；历史查询示例使用空配置对象，并注册 `/history` 命令。
 
@@ -73,7 +77,7 @@ dotnet build samples/Missili.Sample.History -c Release
 
 这两个路径同样相对于内容根目录。省略 `ConfigurationFile` 表示使用空 JSON 对象；提供文件时必须是合法 JSON 对象，不会忽略错误或自动改写。
 
-编译插件的使用端不需要 SDK。本阶段可通过 `IPluginManager` 管理服务安装、启停和重载；没有开放管理 HTTP API。示例的发送通过宿主服务执行，没有平台传输时明确返回不可用。
+编译插件的使用端不需要 SDK。通过 `IPluginManager` 管理服务安装、启停和重载；当前没有开放管理 HTTP API。示例的发送通过宿主服务执行，没有平台传输时明确返回不可用。
 
 完整契约见 [插件开发说明](docs/plugin-development.md)。
 
@@ -89,6 +93,10 @@ dotnet build samples/Missili.Sample.History -c Release
 | Missili.Host | 配置、组装、生命周期及健康接口 |
 | Missili.Adapters.OneBot | 可动态加载的 OneBot v11 官方适配器 |
 | Missili.OneBot.Mock | 独立协议对端及合成场景 |
+| Missili.Models | 配置路由、模型协调、上下文与媒体转述 |
+| Missili.Providers.OpenAI | Chat Completions、Responses 及语音转写插件 |
+| Missili.Providers.Anthropic | Anthropic Messages 插件 |
+| Missili.Model.Mock | 独立模型 HTTP／SSE 协议对端 |
 
 初始数据库通过 EF Core migrations 创建，不使用 `EnsureCreated`。检查模型与迁移是否一致：
 

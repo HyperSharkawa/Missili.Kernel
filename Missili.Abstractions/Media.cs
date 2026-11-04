@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Collections.Immutable;
 
 namespace Missili.Abstractions;
 
@@ -86,12 +87,20 @@ public sealed record TranscriptionSnapshot
     public required string ContentKey { get; init; }
     public required string Kind { get; init; }
     public string? Text { get; init; }
-    public string? Provider { get; init; }
-    public string? Model { get; init; }
-    public string? Prompt { get; init; }
+    public ImmutableArray<TranscriptionSource> Sources { get; init; } = [];
     public DateTimeOffset? CompletedAt { get; init; }
     public string? LastError { get; init; }
     public long Revision { get; init; }
+}
+
+/// <summary>准确记录每批转述的来源，缓存身份仍然只取原件与转述种类。</summary>
+public sealed record TranscriptionSource
+{
+    public string? Provider { get; init; }
+    public string? Model { get; init; }
+    public string? Prompt { get; init; }
+    public int Batch { get; init; }
+    public Guid? CallId { get; init; }
 }
 
 /// <summary>转述存储契约；本阶段不会调用任何转述模型。</summary>

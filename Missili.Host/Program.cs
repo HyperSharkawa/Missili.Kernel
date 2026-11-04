@@ -23,11 +23,15 @@ public static class Program
         InfrastructureOptions options = builder.Configuration.GetSection("Infrastructure").Get<InfrastructureOptions>() ?? new InfrastructureOptions();
         options.DataDirectory = Path.GetFullPath(options.DataDirectory, builder.Environment.ContentRootPath);
         options.Validate();
+        ModelOptions models = builder.Configuration.GetSection("Models").Get<ModelOptions>() ?? new ModelOptions();
+        models = models with { ConfigurationDirectory = Path.GetFullPath(models.ConfigurationDirectory, builder.Environment.ContentRootPath) };
+        models.Validate();
+        builder.Services.AddSingleton(models);
         builder.Services.AddSingleton(options);
         builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.AddSingleton(services => InfrastructureFactory.Create(
             services.GetRequiredService<InfrastructureOptions>(), services.GetRequiredService<ILoggerFactory>(),
-            services.GetServices<IMessageTransport>(), services.GetRequiredService<TimeProvider>()));
+            services.GetServices<IMessageTransport>(), services.GetRequiredService<TimeProvider>(), services.GetRequiredService<ModelOptions>()));
         builder.Services.AddHostedService<InfrastructureLifetime>();
         builder.Services.AddAuthorization();
         builder.Services.AddOpenApi();

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "sample.model-chat",
+  "name": "显式模型联调",
+  "version": "0.3.0",
+  "entryAssembly": "Missili.Sample.ModelChat.dll",
+  "entryType": "Missili.Samples.ModelChat.Entry",
+  "contractVersion": 3
+}

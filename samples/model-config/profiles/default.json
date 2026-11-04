@@ -1,0 +1,13 @@
+{
+  "id": "default",
+  "replyModels": ["primary", "fallback"],
+  "imageModels": ["primary", "fallback"],
+  "transcriptionModels": ["speech"],
+  "systemPrompt": "根据带来源的会话资料回答当前问题。这里只进行合成协议联调。",
+  "images": "TextOnly",
+  "audio": "TextOnly",
+  "imageTranscriptionEnabled": true,
+  "audioTranscriptionEnabled": true,
+  "maximumMessages": 100,
+  "discardMessages": 20
+}
