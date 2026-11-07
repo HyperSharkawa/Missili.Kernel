@@ -1,0 +1,15 @@
+<Project>
+  <!-- 宿主发布和测试构建共用真实 Publish，不用旧目录或编译缓存补齐插件包。 -->
+  <Target Name="PrepareOfficialPluginPackages" AfterTargets="$(OfficialPluginPackageAfterTargets)" Condition="'@(OfficialPlugin)' != ''">
+    <PropertyGroup>
+      <OfficialPluginOutputRoot Condition="'$(OfficialPluginPackageAfterTargets)' == 'Publish'">$([System.IO.Path]::GetFullPath('$(PublishDir)', '$(MSBuildProjectDirectory)'))/plugins/</OfficialPluginOutputRoot>
+      <OfficialPluginOutputRoot Condition="'$(OfficialPluginPackageAfterTargets)' == 'Build'">$(TargetDir)plugins/</OfficialPluginOutputRoot>
+    </PropertyGroup>
+    <Error Condition="'$(OfficialPluginOutputRoot)' == ''" Text="官方插件包缺少有效输出目录。" />
+    <Error Condition="!Exists('%(OfficialPlugin.Identity)') Or '%(OfficialPlugin.PackageDirectory)' == ''" Text="官方插件工程不存在或发布目录为空。" />
+    <MSBuild Projects="%(OfficialPlugin.Identity)" Targets="Publish"
+      Properties="Configuration=$(Configuration);PublishDir=$(OfficialPluginOutputRoot)%(OfficialPlugin.PackageDirectory)/;UseAppHost=false" />
+    <Error Condition="!Exists('$(OfficialPluginOutputRoot)%(OfficialPlugin.PackageDirectory)/plugin.json') Or !Exists('$(OfficialPluginOutputRoot)%(OfficialPlugin.PackageDirectory)/%(OfficialPlugin.Filename).dll') Or !Exists('$(OfficialPluginOutputRoot)%(OfficialPlugin.PackageDirectory)/%(OfficialPlugin.Filename).deps.json')"
+      Text="官方插件发布缺少清单、入口或依赖描述：%(OfficialPlugin.PackageDirectory)。" />
+  </Target>
+</Project>

@@ -3,7 +3,7 @@ using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using Missili.Abstractions;
-using Missili.Tools.ModelMock;
+using Missili.Model.Mock;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using Xunit;
@@ -25,12 +25,12 @@ public sealed class ModelMediaTests
         string variable = "MISSILI_MEDIA_TEST_" + Guid.NewGuid().ToString("N"); Environment.SetEnvironmentVariable(variable, "synthetic");
         try
         {
-            ModelConfiguration config = ImageConfiguration(mock.BaseAddress, variable, protocol);
+            ConversationConfiguration config = ImageConfiguration(mock.BaseAddress, variable, protocol);
             await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(token, models: config);
             await LoadProviderAsync(fixture, protocol, token);
             using Image<Rgba32> image = new(8, 100, new Rgba32(100, 40, 200));
             Guid mediaId = await ImagePreparationTests.ImportAsync(fixture, image, "PNG", token);
-            ConversationProfileSnapshot profile = fixture.Runtime.Models.Profiles.Resolve(TestStore.Address());
+            ConversationProfileSnapshot profile = fixture.Runtime.Profiles.Resolve(TestStore.Address());
             MediaTranscriptionResult result = await fixture.Runtime.Models.Transcriptions.EnsureAsync(mediaId, profile, cancellationToken: token);
             Assert.True(result.Succeeded, result.Error);
             Assert.True(mock.TotalRequests > 1);
@@ -74,7 +74,7 @@ public sealed class ModelMediaTests
             using Image<Rgba32> image = new(8, 8, new Rgba32(100, 40, 200));
             Guid firstId = await ImagePreparationTests.ImportAsync(fixture, image, "PNG", token);
             Guid secondId = await ImagePreparationTests.ImportAsync(fixture, image, "PNG", token);
-            ConversationProfileSnapshot profile = fixture.Runtime.Models.Profiles.Resolve(TestStore.Address());
+            ConversationProfileSnapshot profile = fixture.Runtime.Profiles.Resolve(TestStore.Address());
             using CancellationTokenSource cancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
             Task<MediaTranscriptionResult> first = fixture.Runtime.Models.Transcriptions.EnsureAsync(firstId, profile, cancellationToken: cancellation.Token);
             await mock.NextRequestAsync(token);
@@ -99,7 +99,7 @@ public sealed class ModelMediaTests
         string variable = "MISSILI_MEDIA_TEST_" + Guid.NewGuid().ToString("N"); Environment.SetEnvironmentVariable(variable, "synthetic");
         try
         {
-            ModelConfiguration config = ModelConfigurationTests.Configuration(new Uri(mock.BaseAddress, "/v1"), variable);
+            ConversationConfiguration config = ConversationConfigurationTests.Configuration(new Uri(mock.BaseAddress, "/v1"), variable);
             config = config with
             {
                 Providers = config.Providers.Add(new ModelProviderDefinition { Id = "speech", Protocol = ModelProtocol.AudioTranscription, BaseUrl = new Uri(mock.BaseAddress, "/v1"), ApiKeyEnvironmentVariable = variable }),
@@ -110,7 +110,7 @@ public sealed class ModelMediaTests
             await LoadProviderAsync(fixture, ModelProtocol.ChatCompletions, token);
             using MemoryStream audio = Wav();
             MediaStatus imported = await fixture.Runtime.MediaImporter.ImportAsync(MediaKind.Audio, audio, cancellationToken: token);
-            MediaTranscriptionResult result = await fixture.Runtime.Models.Transcriptions.EnsureAsync(imported.Id, fixture.Runtime.Models.Profiles.Resolve(TestStore.Address()), cancellationToken: token);
+            MediaTranscriptionResult result = await fixture.Runtime.Models.Transcriptions.EnsureAsync(imported.Id, fixture.Runtime.Profiles.Resolve(TestStore.Address()), cancellationToken: token);
             Assert.True(result.Succeeded, result.Error);
             Assert.Equal("合成语音转写", result.Cached!.Text);
             ModelMockRequest request = Assert.Single(mock.Requests);
@@ -120,14 +120,14 @@ public sealed class ModelMediaTests
     }
 
     /// <summary>创建只使用合成端点的图片候选配置，预算足够单片但不足所有切片。</summary>
-    internal static ModelConfiguration ImageConfiguration(Uri address, string variable, ModelProtocol protocol)
+    internal static ConversationConfiguration ImageConfiguration(Uri address, string variable, ModelProtocol protocol)
     {
-        ModelConfiguration config = ModelConfigurationTests.Configuration(protocol == ModelProtocol.Anthropic ? address : new Uri(address, "/v1"), variable);
+        ConversationConfiguration config = ConversationConfigurationTests.Configuration(protocol == ModelProtocol.Anthropic ? address : new Uri(address, "/v1"), variable);
         return config with
         {
             Providers = [config.Providers[0] with { Protocol = protocol }],
             Models = [new ModelDefinition { Id = "vision", Name = "synthetic-vision", ProviderId = "test", Images = true, MaxRequestBytes = 4000 }],
-            Profiles = [config.Profiles[0] with { ReplyModels = ["vision"], ImageModels = ["vision"], ImageTranscriptionEnabled = true,
+            Profiles = [config.Profiles[0] with { ImageModels = ["vision"], ImageTranscriptionEnabled = true,
                 ImagePreparation = new ImagePreparationOptions { MaxWidth = 16, MaxHeight = 16, Overlap = 2, MaxRequestBytes = 4000 },
                 Execution = new ModelExecutionOptions { Rounds = 1, CaptureSuccessfulDetails = true } }]
         };
@@ -137,7 +137,7 @@ public sealed class ModelMediaTests
     internal static async Task LoadProviderAsync(RuntimeFixture fixture, ModelProtocol protocol, CancellationToken token)
     {
         string package = protocol == ModelProtocol.Anthropic ? "anthropic" : "openai";
-        PluginStatus loaded = await fixture.Runtime.Plugins.LoadAsync(Path.Combine(AppContext.BaseDirectory, "Providers", package), RuntimeFixture.Configuration(), token);
+        PluginStatus loaded = await fixture.Runtime.Plugins.LoadAsync(OfficialPluginPackages.GetPath(package), RuntimeFixture.Configuration(), token);
         Assert.Equal(PluginState.Active, loaded.State);
     }
 

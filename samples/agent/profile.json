@@ -1,0 +1,52 @@
+{
+  "id": "agent",
+  "maximumMessages": 100,
+  "discardMessages": 20,
+  "visibility": "Placeholder",
+  "agent": {
+    "enabled": true,
+    "models": ["primary", "fallback"],
+    "outputMode": "Direct",
+    "tools": ["history.search", "history.read", "history.read_task_record", "content.read", "transcription.read", "reply.generate", "agent.spawn", "agent.list", "agent.message", "agent.followup", "agent.wait", "agent.stop", "agent.finish_turn"],
+    "delegatedTools": ["history.search", "history.read", "history.read_task_record", "agent.list", "agent.message", "agent.wait", "agent.finish_turn"],
+    "permissions": [],
+    "delegatedPermissions": [],
+    "administrators": [],
+    "defaultTemplate": "researcher",
+    "templates": [
+      {
+        "id": "researcher",
+        "description": "查阅当前获准会话的历史，给出可追溯事实及未完成事项。",
+        "models": ["primary"],
+        "instructions": "完成父代理分配的问题，必要时查询同树身份并交流事实；不自动向用户发言。",
+        "tools": ["history.search", "history.read", "history.read_task_record", "agent.list", "agent.message", "agent.wait", "agent.finish_turn"]
+      }
+    ]
+  },
+  "approvals": {
+    "enabled": false,
+    "models": ["primary"],
+    "policy": { "templateId": "codex-default" },
+    "tools": {
+      "shell.execute": {
+        "enabled": true,
+        "policy": { "templateId": "codex-default", "additionalText": "仅放行本次明确要求及授权范围内的命令；信息不足时说明需要用户补充的内容。" }
+      }
+    }
+  },
+  "outgoing": {
+    "processors": [{ "pluginId": "missili.plugins.reply-processing", "handlerId": "process" }]
+  },
+  "plugins": {
+    "missili.plugins.agent-chat": {
+      "wakePrefixes": ["/agent"],
+      "mentions": true,
+      "keywords": [],
+      "probability": { "enabled": false, "value": 0.0 },
+      "allowedConversations": []
+    },
+    "missili.tools.history": {},
+    "missili.tools.reply": { "models": ["primary"], "systemPrompt": "按明确要求表达事实，区分完整结论与部分结果。", "stream": true },
+    "missili.plugins.reply-processing": { "purposes": ["reply"], "steps": [] }
+  }
+}

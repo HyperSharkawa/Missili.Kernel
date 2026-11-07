@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace Missili.Tools.ModelMock;
+namespace Missili.Model.Mock;
 
 /// <summary>独立合成模型协议服务，默认只监听回环地址。</summary>
 public static class Program

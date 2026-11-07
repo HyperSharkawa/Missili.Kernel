@@ -1,0 +1,13 @@
+{
+  "profiles": {
+    "Missili.Model.Mock": {
+      "commandName": "Project",
+      "launchBrowser": false,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "workingDirectory": "../..",
+      "commandLineArgs": "--scenario samples/model-mock/fallback.json --url http://127.0.0.1:24080"
+    }
+  }
+}

@@ -7,6 +7,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Missili.Abstractions;
 using Missili.Models;
+using Missili.Kernel;
+using Missili.Nexus;
 using Missili.Persistence;
 using Xunit;
 
@@ -15,6 +17,49 @@ namespace Missili.Tests;
 /// <summary>真实 SDK、网络和 SQLite 验证候选策略、取消和失败详情。</summary>
 public sealed class ModelCoordinatorTests
 {
+    /// <summary>停止接单取消排队请求且不切换候选，已经运行的请求仍能完整结束。</summary>
+    [Fact]
+    public async Task AdmissionCancellationDoesNotCancelRunningNetworkRequest()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        int calls = 0;
+        await using TestHttpServer server = await TestHttpServer.StartAsync(async context =>
+        {
+            Interlocked.Increment(ref calls); entered.TrySetResult();
+            await release.Task.WaitAsync(context.RequestAborted);
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsync(Success, context.RequestAborted);
+        }, token);
+        string variable = "MISSILI_MODEL_ADMISSION_" + Guid.NewGuid().ToString("N"); Environment.SetEnvironmentVariable(variable, "synthetic");
+        try
+        {
+            ConversationConfiguration configuration = ModelFailureTests.Configuration(server.BaseAddress, variable, ModelProtocol.ChatCompletions);
+            configuration = configuration with { Providers = [configuration.Providers[0] with { MaxConcurrency = 1 }] };
+            await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(token, models: configuration,
+                modelOptions: new ModelOptions { NetworkConcurrency = 1 });
+            await LoadAsync(fixture, token);
+            using CancellationTokenSource firstAdmission = new(); using CancellationTokenSource secondAdmission = new();
+            ModelRequest first = Request(fixture.Runtime.Profiles.Resolve(TestStore.Address()));
+            Task<ModelResult> running = fixture.Runtime.Models.GenerateAsync(first, cancellationToken: token, admissionCancellationToken: firstAdmission.Token);
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10), token);
+            ModelRequest second = first with { Id = Guid.NewGuid() };
+            Task<ModelResult> queued = fixture.Runtime.Models.GenerateAsync(second, cancellationToken: token, admissionCancellationToken: secondAdmission.Token);
+            using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(TimeSpan.FromSeconds(10));
+            while ((await fixture.Runtime.Models.Calls.GetCallAsync(second.Id, deadline.Token))?.Attempts.Length is not > 0) await Task.Delay(10, deadline.Token);
+            await secondAdmission.CancelAsync();
+            ModelResult cancelled = await queued.WaitAsync(TimeSpan.FromSeconds(10), token);
+            Assert.Equal(ModelCallState.Cancelled, cancelled.State); Assert.Equal(1, calls);
+            await firstAdmission.CancelAsync();
+            Assert.False(running.IsCompleted);
+            release.TrySetResult();
+            ModelResult completed = await running.WaitAsync(TimeSpan.FromSeconds(10), token);
+            Assert.Equal(ModelCallState.Succeeded, completed.State); Assert.True(completed.Complete); Assert.Equal(1, calls);
+        }
+        finally { release.TrySetResult(); Environment.SetEnvironmentVariable(variable, null); }
+    }
+
     /// <summary>失败候选按轮次有序执行，SDK 不增加隐藏重试。</summary>
     [Theory]
     [InlineData(false)]
@@ -37,8 +82,8 @@ public sealed class ModelCoordinatorTests
         Environment.SetEnvironmentVariable(variable, "synthetic-not-a-real-key");
         try
         {
-            await using ModelConfigurationService configuration = new(fixture.Root, 8, NullLogger.Instance, TimeProvider.System);
-            configuration.Publish(ModelConfigurationTests.Configuration(server.BaseAddress, variable));
+            await using ConversationConfigurationService configuration = new(fixture.Root, 8, NullLogger.Instance, TimeProvider.System, new PluginConfigurationDirectory());
+            await configuration.PublishAsync(ConversationConfigurationTests.Configuration(server.BaseAddress, variable), token);
             await using ModelCoordinator coordinator = new((IModelStore)fixture.Runtime.History, fixture.Runtime.ModelProviders, new ModelOptions(), fixture.Root, Guid.NewGuid(), NullLogger.Instance, TimeProvider.System);
             ModelRequest request = Request(configuration.Resolve(TestStore.Address()));
             ModelResult result = await coordinator.GenerateAsync(request, cancellationToken: token);
@@ -82,8 +127,8 @@ public sealed class ModelCoordinatorTests
         Environment.SetEnvironmentVariable(variable, "synthetic-not-a-real-key");
         try
         {
-            await using ModelConfigurationService configuration = new(fixture.Root, 8, NullLogger.Instance, TimeProvider.System);
-            configuration.Publish(ModelConfigurationTests.Configuration(server.BaseAddress, variable));
+            await using ConversationConfigurationService configuration = new(fixture.Root, 8, NullLogger.Instance, TimeProvider.System, new PluginConfigurationDirectory());
+            await configuration.PublishAsync(ConversationConfigurationTests.Configuration(server.BaseAddress, variable), token);
             await using ModelCoordinator coordinator = new((IModelStore)fixture.Runtime.History, fixture.Runtime.ModelProviders, new ModelOptions(), fixture.Root, Guid.NewGuid(), NullLogger.Instance, TimeProvider.System);
             using CancellationTokenSource cancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
             CancelOnText sink = new(cancellation);
@@ -109,8 +154,8 @@ public sealed class ModelCoordinatorTests
         await using MissiliDbContext database = new(new DbContextOptionsBuilder<MissiliDbContext>().UseSqlite(
             new SqliteConnectionStringBuilder { DataSource = Path.Combine(fixture.Root, "history.db"), ForeignKeys = true }.ToString()).Options);
         await database.Database.ExecuteSqlRawAsync("DROP TABLE ModelCalls", token);
-        await using ModelConfigurationService configuration = new(fixture.Root, 8, NullLogger.Instance, TimeProvider.System);
-        configuration.Publish(ModelConfigurationTests.Configuration(server.BaseAddress));
+        await using ConversationConfigurationService configuration = new(fixture.Root, 8, NullLogger.Instance, TimeProvider.System, new PluginConfigurationDirectory());
+        await configuration.PublishAsync(ConversationConfigurationTests.Configuration(server.BaseAddress), token);
         await using ModelCoordinator coordinator = new((IModelStore)fixture.Runtime.History, fixture.Runtime.ModelProviders, new ModelOptions(), fixture.Root, Guid.NewGuid(), NullLogger.Instance, TimeProvider.System);
         ModelResult result = await coordinator.GenerateAsync(Request(configuration.Resolve(TestStore.Address())), cancellationToken: token);
         Assert.Equal(ModelCallState.RecordingFailed, result.State);
@@ -120,13 +165,13 @@ public sealed class ModelCoordinatorTests
     /// <summary>从实际构建目录加载提供商 DLL，不建立静态程序集引用。</summary>
     private static async Task LoadAsync(RuntimeFixture fixture, CancellationToken token)
     {
-        PluginStatus status = await fixture.Runtime.Plugins.LoadAsync(Path.Combine(AppContext.BaseDirectory, "Providers/openai"), RuntimeFixture.Configuration(), token);
+        PluginStatus status = await fixture.Runtime.Plugins.LoadAsync(OfficialPluginPackages.GetPath("openai"), RuntimeFixture.Configuration(), token);
         Assert.Equal(PluginState.Active, status.State);
     }
 
     /// <summary>协议请求使用固定快照和合成文本，不选择任何真实模型服务。</summary>
     private static ModelRequest Request(ConversationProfileSnapshot profile) => new()
-    { Purpose = "reply", Profile = profile, Candidates = profile.Profile.ReplyModels, Stream = false, Messages = [new ModelMessage { Role = "user", Content = [ModelBlock.TextBlock("合成请求")] }] };
+    { Purpose = "reply", Profile = profile, Candidates = ["A", "B"], Stream = false, Input = ModelInput.FromTurns([new ModelMessage { Role = "user", Content = [ModelBlock.TextBlock("合成请求")] }]) };
 
     private const string Success = """{"id":"chat-1","object":"chat.completion","created":1,"model":"B","choices":[{"index":0,"message":{"role":"assistant","content":"完整回复"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}""";
 

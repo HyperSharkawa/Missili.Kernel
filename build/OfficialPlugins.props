@@ -1,0 +1,13 @@
+<Project>
+  <!-- 官方工程与发布目录只在此登记；插件身份和入口继续由各包清单声明。 -->
+  <ItemGroup>
+    <OfficialPlugin Include="$(MissiliRepositoryRoot)plugins/Missili.Adapters.OneBot/Missili.Adapters.OneBot.csproj" PackageDirectory="onebot" />
+    <OfficialPlugin Include="$(MissiliRepositoryRoot)plugins/Missili.Providers.OpenAI/Missili.Providers.OpenAI.csproj" PackageDirectory="openai" />
+    <OfficialPlugin Include="$(MissiliRepositoryRoot)plugins/Missili.Providers.Anthropic/Missili.Providers.Anthropic.csproj" PackageDirectory="anthropic" />
+    <OfficialPlugin Include="$(MissiliRepositoryRoot)plugins/Missili.Plugins.AgentChat/Missili.Plugins.AgentChat.csproj" PackageDirectory="agent-chat" />
+    <OfficialPlugin Include="$(MissiliRepositoryRoot)plugins/Missili.Plugins.ReplyProcessing/Missili.Plugins.ReplyProcessing.csproj" PackageDirectory="reply-processing" />
+    <OfficialPlugin Include="$(MissiliRepositoryRoot)plugins/Missili.Tools.History/Missili.Tools.History.csproj" PackageDirectory="history" />
+    <OfficialPlugin Include="$(MissiliRepositoryRoot)plugins/Missili.Tools.Reply/Missili.Tools.Reply.csproj" PackageDirectory="reply" />
+    <OfficialPlugin Include="$(MissiliRepositoryRoot)plugins/Missili.Tools.Shell/Missili.Tools.Shell.csproj" PackageDirectory="shell" />
+  </ItemGroup>
+</Project>

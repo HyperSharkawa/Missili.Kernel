@@ -11,6 +11,37 @@ namespace Missili.Tests;
 /// <summary>真实 SQLite 验证上下文边界和旧转述来源迁移，不用内存数据库代替。</summary>
 public sealed class ModelStorageTests
 {
+    /// <summary>别名的较大规范 ID 不能使已经批量淘汰的逻辑消息复活，升级旧别名也保持这一规则。</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AliasedLateReceiptDoesNotRestoreDiscardedMessage(bool upgrade)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using TestStore fixture = await TestStore.CreateAsync();
+        MessageSnapshot intent = await fixture.Store.AppendOutgoingAsync(new OutgoingMessage { Address = TestStore.Address(), Segments = [SegmentValues.Text("已淘汰原文")] }, TestStore.Now, fixture.RunId, token);
+        await fixture.Store.SetDeliveryAsync(intent.Id, new TransportResult { State = DeliveryState.Confirmed }, token);
+        await fixture.Store.AppendAsync(TestStore.Message("同批淘汰"), TestStore.Now, fixture.RunId, token);
+        await fixture.Store.AppendAsync(TestStore.Message("保留正文"), TestStore.Now, fixture.RunId, token);
+        Assert.Single((await fixture.Store.CaptureWindowAsync(TestStore.Address(), 3, 2, token)).Messages);
+        MessageSnapshot observation = (await fixture.Store.AppendAsync(TestStore.Message("已淘汰原文") with
+        { Direction = MessageDirection.Outgoing, PlatformMessageId = "late-alias", SenderId = TestStore.Address().BotAccountId }, TestStore.Now, fixture.RunId, token)).Message!;
+        await fixture.Store.SetDeliveryAsync(intent.Id, new TransportResult { State = DeliveryState.Confirmed, PlatformMessageId = "late-alias" }, token);
+        if (upgrade)
+        {
+            await using MissiliDbContext database = new(new DbContextOptionsBuilder<MissiliDbContext>().UseSqlite(new SqliteConnectionStringBuilder
+            { DataSource = fixture.DatabasePath, ForeignKeys = true, Pooling = false }.ToString()).Options);
+            IMigrator migrations = database.GetService<IMigrator>();
+            await migrations.MigrateAsync("20261104002700_ModelContextAndCalls", token);
+            await migrations.MigrateAsync(cancellationToken: token);
+        }
+        ConversationWindow window = await fixture.Store.CaptureWindowAsync(TestStore.Address(), 3, 2, token);
+        Assert.DoesNotContain(window.Messages, message => message.Segments.Any(segment => segment.Text == "已淘汰原文"));
+        Assert.Equal("保留正文", Assert.Single(window.Messages).Segments[0].Text);
+        Assert.Equal(observation.Id, (await fixture.Store.GetAsync(intent.Id, token))!.Id);
+        Assert.Equal("已淘汰原文", (await fixture.Store.GetAsync(observation.Id, token))!.Segments[0].Text);
+    }
+
     /// <summary>突发历史按整批推进；用户显式选择 y=1 时也不超过窗口上限。</summary>
     [Theory]
     [InlineData(20, 97)]

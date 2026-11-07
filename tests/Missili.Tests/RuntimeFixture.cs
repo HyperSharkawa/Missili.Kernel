@@ -19,33 +19,33 @@ internal sealed class RuntimeFixture : IAsyncDisposable
     public InfrastructureRuntime Runtime { get; }
 
     /// <summary>创建独立数据目录及真实框架，不加载任何真实账号配置。</summary>
-    private RuntimeFixture(Action<InfrastructureOptions>? configure, TimeProvider? clock, bool enableModels, ModelOptions? modelOptions)
+    private RuntimeFixture(Action<InfrastructureOptions>? configure, TimeProvider? clock, bool enableModels, ModelOptions? modelOptions, AgentOptions? agentOptions, PluginExecutionOptions? pluginExecutionOptions)
     {
         Root = Path.Combine(Path.GetTempPath(), "Missili.Tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Root);
-        Options = new InfrastructureOptions { DataDirectory = Root };
+        Options = new InfrastructureOptions { DataDirectory = Root, ConversationConfigurationDirectory = enableModels ? Path.Combine(Root, "model-config") : null };
         configure?.Invoke(Options);
         Transport = new RecordingTransport();
-        ModelOptions models = (modelOptions ?? new ModelOptions()) with { Enabled = enableModels, ConfigurationDirectory = Path.Combine(Root, "model-config") };
-        Runtime = InfrastructureFactory.Create(Options, NullLoggerFactory.Instance, [Transport], clock, models);
+        ModelOptions models = (modelOptions ?? new ModelOptions()) with { Enabled = enableModels };
+        Runtime = InfrastructureFactory.Create(Options, NullLoggerFactory.Instance, [Transport], clock, models, agentOptions, pluginExecutionOptions);
     }
 
     /// <summary>执行真实宿主初始化与数据库迁移。</summary>
     public static async Task<RuntimeFixture> CreateAsync(CancellationToken token, Action<InfrastructureOptions>? configure = null, TimeProvider? clock = null,
-        ModelConfiguration? models = null, ModelOptions? modelOptions = null)
+        ConversationConfiguration? models = null, ModelOptions? modelOptions = null, AgentOptions? agentOptions = null, PluginExecutionOptions? pluginExecutionOptions = null)
     {
-        RuntimeFixture fixture = new(configure, clock, models is not null, modelOptions);
+        RuntimeFixture fixture = new(configure, clock, models is not null, modelOptions, agentOptions, pluginExecutionOptions);
         if (models is not null) await fixture.WriteModelsAsync(models, token);
         await fixture.Runtime.StartAsync(token);
         return fixture;
     }
 
     /// <summary>写入测试独占的实际配置文件，模型模块仍通过生产文件读取路径初始化。</summary>
-    public async Task WriteModelsAsync(ModelConfiguration models, CancellationToken token)
-        => await WriteModelConfigurationAsync(Root, models, token);
+    public async Task WriteModelsAsync(ConversationConfiguration models, CancellationToken token)
+        => await WriteConversationConfigurationAsync(Root, models, token);
 
     /// <summary>同一配置写入器供内核夹具和真实 Web 宿主夹具复用。</summary>
-    internal static async Task WriteModelConfigurationAsync(string root, ModelConfiguration models, CancellationToken token)
+    internal static async Task WriteConversationConfigurationAsync(string root, ConversationConfiguration models, CancellationToken token)
     {
         string directory = Path.Combine(root, "model-config");
         Directory.CreateDirectory(Path.Combine(directory, "profiles"));
@@ -73,7 +73,7 @@ internal sealed class RuntimeFixture : IAsyncDisposable
         PluginManifest manifest = new()
         {
             SchemaVersion = 1,
-            ContractVersion = 3,
+            ContractVersion = 5,
             Id = id,
             Name = id,
             Version = version,

@@ -26,7 +26,7 @@ internal sealed class OneBotFixture : IAsyncDisposable
     public Dictionary<string, object> Settings { get; } = new();
 
     /// <summary>使用生产宿主入口，仅覆盖数据目录、监听地址与日志输出。</summary>
-    private OneBotFixture(TimeProvider? clock, bool enableModels)
+    private OneBotFixture(TimeProvider? clock, bool enableModels, bool enableAgents)
     {
         Root = Path.Combine(Path.GetTempPath(), "Missili.Tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Root);
@@ -36,7 +36,8 @@ internal sealed class OneBotFixture : IAsyncDisposable
             {
                 ["Infrastructure:DataDirectory"] = Root,
                 ["Models:Enabled"] = enableModels.ToString(),
-                ["Models:ConfigurationDirectory"] = Path.Combine(Root, "model-config")
+                ["Agents:Enabled"] = enableAgents.ToString(),
+                ["Infrastructure:ConversationConfigurationDirectory"] = enableModels ? Path.Combine(Root, "model-config") : null
             });
             builder.WebHost.UseUrls("http://127.0.0.1:0"); builder.Logging.ClearProviders();
             if (clock is not null) builder.Services.AddSingleton(clock);
@@ -46,13 +47,13 @@ internal sealed class OneBotFixture : IAsyncDisposable
     /// <summary>启动真实宿主和两端连接，配置仅含合成账号与测试 Token。</summary>
     public static async Task<OneBotFixture> CreateAsync(bool reverse, bool split, CancellationToken token,
         Action<Dictionary<string, object>>? configure = null, Action<MockPeer>? configurePeer = null, bool connect = true, TimeProvider? clock = null,
-        ModelConfiguration? models = null)
+        ConversationConfiguration? models = null, bool enableAgents = false)
     {
-        OneBotFixture fixture = new(clock, models is not null);
+        OneBotFixture fixture = new(clock, models is not null, enableAgents);
         try
         {
             fixture.Peer.Token = "synthetic-token";
-            if (models is not null) await RuntimeFixture.WriteModelConfigurationAsync(fixture.Root, models, token);
+            if (models is not null) await RuntimeFixture.WriteConversationConfigurationAsync(fixture.Root, models, token);
             configurePeer?.Invoke(fixture.Peer);
             await fixture._application.StartAsync(token);
             fixture.HostUrl = fixture._application.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
@@ -68,7 +69,7 @@ internal sealed class OneBotFixture : IAsyncDisposable
                 else fixture.Settings["url"] = url + "/";
             }
             configure?.Invoke(fixture.Settings);
-            PluginStatus loaded = await fixture.Runtime.Plugins.LoadAsync(Path.Combine(AppContext.BaseDirectory, "Adapters", "onebot"), fixture.Configuration(), token);
+            PluginStatus loaded = await fixture.Runtime.Plugins.LoadAsync(OfficialPluginPackages.GetPath("onebot"), fixture.Configuration(), token);
             if (loaded.State != PluginState.Active) throw new InvalidOperationException("OneBot 测试插件初始化失败：" + loaded.Error);
             if (reverse && connect)
             {
@@ -106,7 +107,8 @@ internal sealed class OneBotFixture : IAsyncDisposable
     /// <summary>跳过已处理的身份查询，只等待特定实际操作。</summary>
     public async Task<MockAction> WaitActionAsync(string action, CancellationToken token)
     {
-        using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(TimeSpan.FromSeconds(10));
+        // 完整套件会并行执行实际卸载与强制回收，平台观察期限覆盖这部分测试资源竞争。
+        using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(TimeSpan.FromSeconds(30));
         while (true) { MockAction received = await Peer.NextActionAsync(deadline.Token); if (received.Action == action) return received; }
     }
     /// <summary>构造与该测试适配器身份完全一致的目标。</summary>

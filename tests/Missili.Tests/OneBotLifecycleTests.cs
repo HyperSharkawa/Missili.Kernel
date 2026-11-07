@@ -25,7 +25,7 @@ public sealed class OneBotLifecycleTests
         { GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect(); await Task.Yield(); }
         Assert.False(reference.IsAlive);
         Assert.Empty(fixture.Runtime.Adapters.GetStatuses());
-        SendResult result = await fixture.Runtime.Sender.SendAsync(new OutgoingMessage { Address = OneBotFixture.Address(), Segments = [SegmentValues.Text("stopped")] }, token);
+        SendResult result = Assert.Single((await fixture.Runtime.Sender.SendAsync(OutgoingBatch.Single(OneBotFixture.Address(), [SegmentValues.Text("stopped")]), token)).Messages);
         Assert.Equal(DeliveryState.Failed, result.State);
     }
 

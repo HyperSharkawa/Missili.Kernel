@@ -5,7 +5,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Missili.Abstractions;
 using Missili.Persistence;
-using Missili.Tools.ModelMock;
+using Missili.Model.Mock;
 using Xunit;
 
 namespace Missili.Tests;
@@ -122,15 +122,15 @@ public sealed class ModelFailureTests
     internal static ModelRequest Request(RuntimeFixture fixture) => new()
     {
         Purpose = "failure.test",
-        Profile = fixture.Runtime.Models.Profiles.Resolve(TestStore.Address()),
+        Profile = fixture.Runtime.Profiles.Resolve(TestStore.Address()),
         Candidates = ["A", "B"],
-        Messages = [new ModelMessage { Role = "user", Content = [ModelBlock.TextBlock("保持原始输入😀")] }]
+        Input = ModelInput.FromTurns([new ModelMessage { Role = "user", Content = [ModelBlock.TextBlock("保持原始输入😀")] }])
     };
 
     /// <summary>模型目录使用两个顺序候选，禁用额外轮次使请求次数可直接核对。</summary>
-    internal static ModelConfiguration Configuration(Uri address, string variable, ModelProtocol protocol)
+    internal static ConversationConfiguration Configuration(Uri address, string variable, ModelProtocol protocol)
     {
-        ModelConfiguration config = ModelConfigurationTests.Configuration(protocol == ModelProtocol.Anthropic ? address : new Uri(address, "/v1"), variable);
+        ConversationConfiguration config = ConversationConfigurationTests.Configuration(protocol == ModelProtocol.Anthropic ? address : new Uri(address, "/v1"), variable);
         return config with { Providers = [config.Providers[0] with { Protocol = protocol }], Profiles = [config.Profiles[0] with { Execution = new ModelExecutionOptions { Rounds = 1 } }] };
     }
 

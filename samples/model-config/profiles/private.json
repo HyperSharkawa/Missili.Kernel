@@ -1,7 +1,12 @@
 {
   "id": "private",
-  "replyModels": ["anthropic"],
-  "systemPrompt": "这是独立的合成私聊配置档。请简短回答。",
+  "plugins": {
+    "sample.model-chat": {
+      "models": ["anthropic"],
+      "systemPrompt": "这是独立的合成私聊配置档。请简短回答。",
+      "stream": true
+    }
+  },
   "maximumMessages": 50,
   "discardMessages": 10
 }

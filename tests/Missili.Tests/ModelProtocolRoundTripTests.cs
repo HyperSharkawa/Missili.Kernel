@@ -1,7 +1,7 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using Missili.Abstractions;
-using Missili.Tools.ModelMock;
+using Missili.Model.Mock;
 using Xunit;
 
 namespace Missili.Tests;
@@ -30,11 +30,11 @@ public sealed class ModelProtocolRoundTripTests
         string variable = "MISSILI_NATIVE_TEST_" + Guid.NewGuid().ToString("N"); Environment.SetEnvironmentVariable(variable, "synthetic");
         try
         {
-            ModelConfiguration config = ModelConfigurationTests.Configuration(protocol == ModelProtocol.Anthropic ? mock.BaseAddress : new Uri(mock.BaseAddress, "/v1"), variable);
-            config = config with { Providers = [config.Providers[0] with { Protocol = protocol }], Models = [config.Models[0] with { Tools = true }], Profiles = [config.Profiles[0] with { ReplyModels = ["A"] }] };
+            ConversationConfiguration config = ConversationConfigurationTests.Configuration(protocol == ModelProtocol.Anthropic ? mock.BaseAddress : new Uri(mock.BaseAddress, "/v1"), variable);
+            config = config with { Providers = [config.Providers[0] with { Protocol = protocol }], Models = [config.Models[0] with { Tools = true }] };
             await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(token, models: config);
             await ModelMediaTests.LoadProviderAsync(fixture, protocol, token);
-            ConversationProfileSnapshot profile = fixture.Runtime.Models.Profiles.Resolve(TestStore.Address());
+            ConversationProfileSnapshot profile = fixture.Runtime.Profiles.Resolve(TestStore.Address());
             using JsonDocument schema = JsonDocument.Parse("""{"type":"object","properties":{"value":{"type":"integer"}},"required":["value"],"additionalProperties":false}""");
             ModelRequest request = new()
             {
@@ -42,19 +42,23 @@ public sealed class ModelProtocolRoundTripTests
                 Profile = profile,
                 Candidates = ["A"],
                 Stream = streaming,
-                Messages = [new ModelMessage { Role = "user", Content = [ModelBlock.TextBlock("合成工具往返")] }],
+                Input = ModelInput.FromTurns([new ModelMessage { Role = "user", Content = [ModelBlock.TextBlock("合成工具往返")] }]),
                 Tools = [new ModelTool { Name = "synthetic_tool", Description = "仅声明，不执行", Parameters = schema.RootElement }]
             };
             ModelResult first = await fixture.Runtime.Models.GenerateAsync(request, cancellationToken: token);
             Assert.Equal(ModelCallState.Succeeded, first.State); Assert.True(first.Complete, first.Error);
             ModelBlock tool = Assert.Single(first.Content, item => item.Kind == ModelBlockKind.ToolCall);
             Assert.True(tool.Complete); Assert.Equal(42, tool.Data!.Value.GetProperty("value").GetInt32());
-            Assert.NotNull(first.Continuation);
+            Assert.Equal(protocol != ModelProtocol.ChatCompletions, first.Continuation is not null);
             ModelResult second = await fixture.Runtime.Models.GenerateAsync(request with
             {
                 Id = Guid.NewGuid(),
-                Messages = [request.Messages[0], new ModelMessage { Role = "assistant", Content = [], Continuation = first.Continuation },
-                    new ModelMessage { Role = "tool", Content = [new ModelBlock { Kind = ModelBlockKind.ToolResult, ToolCallId = tool.ToolCallId, Text = "synthetic-result" }] }]
+                Input = request.Input with
+                {
+                    Items = request.Input.Items.AddRange(new ModelInputItem[] {
+                    new ModelTurnInput { Message = first.ToAssistantMessage() },
+                    new ModelTurnInput { Message = new ModelMessage { Role = "tool", Content = [new ModelBlock { Kind = ModelBlockKind.ToolResult, ToolCallId = tool.ToolCallId, Text = "synthetic-result" }] } } })
+                }
             }, cancellationToken: token);
             Assert.Equal(ModelCallState.Succeeded, second.State); Assert.Equal("已取得工具结果", second.Text);
             JsonElement body = mock.Requests[1].Body!.Value;

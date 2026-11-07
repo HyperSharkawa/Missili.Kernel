@@ -1,9 +1,0 @@
-{
-  "schemaVersion": 1,
-  "id": "missili.providers.openai",
-  "name": "OpenAI 模型协议",
-  "version": "0.3.0",
-  "entryAssembly": "Missili.Providers.OpenAI.dll",
-  "entryType": "Missili.Providers.OpenAI.OpenAIPlugin",
-  "contractVersion": 3
-}

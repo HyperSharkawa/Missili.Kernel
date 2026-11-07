@@ -17,10 +17,8 @@ public sealed class RuntimeTests
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(token, options =>
         {
             options.MessageConcurrency = 1;
-            options.PluginConcurrency = 1;
-            options.PerPluginConcurrency = 1;
             options.IngressCapacity = 4;
-        });
+        }, pluginExecutionOptions: new PluginExecutionOptions { PluginConcurrencyLimit = 1, Handlers = new PluginHandlerExecutionOptions { Concurrency = 1 } });
         await fixture.Runtime.Plugins.LoadAsync(await fixture.PackageAsync("sample", "v1", token), RuntimeFixture.Configuration(), token);
         Task<ReceiveReceipt>[] inputs = Enumerable.Range(0, 24)
             .Select(index => fixture.Runtime.ReceiveAsync(TestStore.Message(index.ToString()), token)).ToArray();
@@ -170,8 +168,7 @@ public sealed class RuntimeTests
         CancellationToken token = TestContext.Current.CancellationToken;
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(token);
         await ExecuteSqlAsync(fixture, "CREATE TRIGGER fail_intent BEFORE INSERT ON Messages WHEN NEW.Direction=1 BEGIN SELECT RAISE(ABORT, 'synthetic'); END;", token);
-        SendResult result = await fixture.Runtime.Sender.SendAsync(new OutgoingMessage
-        { Address = TestStore.Address(), Segments = [new MessageSegment { Kind = SegmentTypes.Text, Text = "test" }] }, token);
+        SendResult result = Assert.Single((await fixture.Runtime.Sender.SendAsync(OutgoingBatch.Single(TestStore.Address(), [new MessageSegment { Kind = SegmentTypes.Text, Text = "test" }]), token)).Messages);
         Assert.Equal(DeliveryState.Failed, result.State);
         Assert.False(result.Recorded);
         Assert.Empty(fixture.Transport.Requests);
@@ -184,8 +181,7 @@ public sealed class RuntimeTests
         CancellationToken token = TestContext.Current.CancellationToken;
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(token);
         await ExecuteSqlAsync(fixture, $"CREATE TRIGGER fail_receipt BEFORE UPDATE OF Delivery ON Messages WHEN NEW.Delivery={(int)DeliveryState.Confirmed} BEGIN SELECT RAISE(ABORT, 'synthetic'); END;", token);
-        SendResult result = await fixture.Runtime.Sender.SendAsync(new OutgoingMessage
-        { Address = TestStore.Address(), Segments = [new MessageSegment { Kind = SegmentTypes.Text, Text = "test" }] }, token);
+        SendResult result = Assert.Single((await fixture.Runtime.Sender.SendAsync(OutgoingBatch.Single(TestStore.Address(), [new MessageSegment { Kind = SegmentTypes.Text, Text = "test" }]), token)).Messages);
         Assert.Equal(DeliveryState.Confirmed, result.State);
         Assert.False(result.Recorded);
         Assert.Single(fixture.Transport.Requests);

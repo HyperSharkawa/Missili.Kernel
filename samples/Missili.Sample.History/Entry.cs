@@ -12,7 +12,7 @@ public sealed class Entry : IPlugin
     {
         cancellationToken.ThrowIfCancellationRequested();
         _context = context;
-        context.Handlers.RegisterCommand("recent", "最近历史", "查询当前会话最近十条可见记录", "/history", 0, QueryAsync);
+        context.Handlers.RegisterCommand("recent", "最近历史", "查询当前会话最近十条可见记录", ["/history"], 0, QueryAsync);
         return Task.CompletedTask;
     }
 
@@ -32,10 +32,6 @@ public sealed class Entry : IPlugin
             IncludeUnconfirmed = false,
             PageSize = 10
         }, cancellationToken);
-        await _context.Sender.SendAsync(new OutgoingMessage
-        {
-            Address = message.OriginalMessage.Address,
-            Segments = [new MessageSegment { Kind = SegmentTypes.Text, Text = $"读取到 {page.Messages.Length} 条会话历史。" }]
-        }, cancellationToken);
+        await _context.Sender.SendAsync(OutgoingBatch.Single(message.OriginalMessage.Address, [new MessageSegment { Kind = SegmentTypes.Text, Text = $"读取到 {page.Messages.Length} 条会话历史。" }]) with { TriggerMessageId = message.OriginalMessage.Id }, cancellationToken);
     }
 }

@@ -1,9 +1,14 @@
 {
   "id": "default",
-  "replyModels": ["primary", "fallback"],
+  "plugins": {
+    "sample.model-chat": {
+      "models": ["primary", "fallback"],
+      "systemPrompt": "根据带来源的会话资料回答当前问题。这里只进行合成协议联调。",
+      "stream": true
+    }
+  },
   "imageModels": ["primary", "fallback"],
   "transcriptionModels": ["speech"],
-  "systemPrompt": "根据带来源的会话资料回答当前问题。这里只进行合成协议联调。",
   "images": "TextOnly",
   "audio": "TextOnly",
   "imageTranscriptionEnabled": true,

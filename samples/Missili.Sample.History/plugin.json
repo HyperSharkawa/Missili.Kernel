@@ -5,5 +5,5 @@
   "version": "1.0.0",
   "entryAssembly": "Missili.Sample.History.dll",
   "entryType": "Missili.Samples.History.Entry",
-  "contractVersion": 3
+  "contractVersion": 5
 }

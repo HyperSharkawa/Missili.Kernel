@@ -29,10 +29,6 @@ public sealed class Entry : IPlugin
     private async Task ReplyAsync(MessageContext message, CancellationToken cancellationToken)
     {
         if (!message.CurrentContent.Any(segment => segment.Kind == SegmentTypes.Text && segment.ParseState == SegmentParseState.Parsed && string.Equals(segment.Text, _keyword, StringComparison.Ordinal))) return;
-        await _context!.Sender.SendAsync(new OutgoingMessage
-        {
-            Address = message.OriginalMessage.Address,
-            Segments = [new MessageSegment { Kind = SegmentTypes.Text, Text = _reply }]
-        }, cancellationToken);
+        await _context!.Sender.SendAsync(OutgoingBatch.Single(message.OriginalMessage.Address, [new MessageSegment { Kind = SegmentTypes.Text, Text = _reply }]) with { TriggerMessageId = message.OriginalMessage.Id }, cancellationToken);
     }
 }

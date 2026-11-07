@@ -16,9 +16,26 @@ public sealed class Entry : IPlugin
         cancellationToken.ThrowIfCancellationRequested();
         _context = context;
         _mode = context.Configuration.TryGetProperty("mode", out System.Text.Json.JsonElement mode) ? mode.GetString()! : "normal";
+        if (_mode.StartsWith("execution-probe", StringComparison.Ordinal))
+        {
+            ExecutionProbe.Register(context, _mode == "execution-probe-handler");
+            return Task.CompletedTask;
+        }
+        if (_mode.StartsWith("outgoing", StringComparison.Ordinal))
+        {
+            FixtureProcessor.Register(context, _mode);
+            if (_mode == "outgoing-init-fail") throw new InvalidOperationException("处理器注册后的合成失败。");
+            return Task.CompletedTask;
+        }
+        if (_mode.StartsWith("tool", StringComparison.Ordinal))
+        {
+            FixtureTool.Register(context, _mode);
+            if (_mode == "tool-init-fail") throw new InvalidOperationException("工具注册后的合成失败。");
+            return Task.CompletedTask;
+        }
         if (_mode.StartsWith("adapter", StringComparison.Ordinal))
         {
-            if (_mode == "adapter-with-handler") context.Handlers.RegisterCommand("adapter-command", "适配器命令", "校验注册冲突时不发布部分命令", "/adapter", 0, CommandAsync);
+            if (_mode == "adapter-with-handler") context.Handlers.RegisterCommand("adapter-command", "适配器命令", "校验注册冲突时不发布部分命令", ["/adapter"], 0, CommandAsync);
             context.Adapters.Register(new AdapterRegistration { AdapterId = "fixture-adapter", BotAccountId = "bot", PlatformId = "synthetic", Driver = new Adapter(), ReverseWebSocket = true });
             _ = context.Tasks.RunAfterActivation(token => Task.Delay(Timeout.InfiniteTimeSpan, token));
             if (_mode == "adapter-init-fail") throw new InvalidOperationException("适配器注册后的合成失败。");
@@ -26,7 +43,7 @@ public sealed class Entry : IPlugin
         }
         context.Handlers.RegisterInterceptor("prefix", "测试拦截器", "验证异常与修改边界", 0, InterceptAsync);
         context.Handlers.RegisterListener(MessageHooks.Received, "reply", "测试回复", "只调用测试传输", 0, ReplyAsync);
-        context.Handlers.RegisterCommand("history", "测试命令", "验证先接管再执行", "/history", 0, CommandAsync, MatchCommand);
+        context.Handlers.RegisterCommand("history", "测试命令", "验证先接管再执行", ["/history"], 0, CommandAsync, MatchCommand);
         if (_mode == "after-sent") context.Handlers.RegisterListener(MessageHooks.Sent, "after", "发送后通知", "验证单并发发送不会自锁", 0, AfterSentAsync);
         if (_mode is "event" or "event-throw") context.Handlers.RegisterEventListener("event", "事件监听", "验证先保存、后通知与异常隔离", 0, OnEventAsync);
         if (_mode is "background" or "init-fail") _ = context.Tasks.Run(token => Task.Delay(Timeout.InfiniteTimeSpan, token));
@@ -45,18 +62,14 @@ public sealed class Entry : IPlugin
         if (_mode == "event-throw") throw new InvalidOperationException("合成的事件监听失败。");
         PlatformEventSnapshot stored = await _context!.Events.GetEventAsync(platformEvent.Id, token) ?? throw new InvalidOperationException("事件尚未落库。");
         IncomingPlatformEvent input = stored.Event;
-        await _context.Sender.SendAsync(new OutgoingMessage
+        await _context.Sender.SendAsync(OutgoingBatch.Single(new MessageAddress
         {
-            Address = new MessageAddress
-            {
-                AdapterId = input.AdapterId,
-                BotAccountId = input.BotAccountId,
-                PlatformId = input.PlatformId,
-                ConversationKind = input.ConversationKind!,
-                ConversationId = input.ConversationId!
-            },
-            Segments = [new MessageSegment { Kind = SegmentTypes.Text, Text = "event:" + input.Type }]
-        }, token);
+            AdapterId = input.AdapterId,
+            BotAccountId = input.BotAccountId,
+            PlatformId = input.PlatformId,
+            ConversationKind = input.ConversationKind!,
+            ConversationId = input.ConversationId!
+        }, [new MessageSegment { Kind = SegmentTypes.Text, Text = "event:" + input.Type }]), token);
     }
 
     /// <summary>根据模式模拟显式拦截、异常或成功替换；不会修改原始快照。</summary>
@@ -117,8 +130,7 @@ public sealed class Entry : IPlugin
     /// <summary>统一经过宿主发送服务，夹具没有自己的网络平台客户端。</summary>
     private async Task SendAsync(MessageContext message, string text, CancellationToken token)
     {
-        await _context!.Sender.SendAsync(new OutgoingMessage
-        { Address = message.OriginalMessage.Address, Segments = [new MessageSegment { Kind = SegmentTypes.Text, Text = text }] }, token);
+        await _context!.Sender.SendAsync(OutgoingBatch.Single(message.OriginalMessage.Address, [new MessageSegment { Kind = SegmentTypes.Text, Text = text }]), token);
     }
 
     /// <summary>释放时写入测试指定的临时标记，用于证明资源实际释放。</summary>

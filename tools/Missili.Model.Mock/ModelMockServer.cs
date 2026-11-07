@@ -7,7 +7,7 @@ using System.Threading.Channels;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 
-namespace Missili.Tools.ModelMock;
+namespace Missili.Model.Mock;
 
 /// <summary>按请求顺序配置合成响应；测试夹具不依赖任何生产协议编码器。</summary>
 public sealed record ModelMockScenario

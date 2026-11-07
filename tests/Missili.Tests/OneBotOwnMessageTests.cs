@@ -20,9 +20,9 @@ public sealed class OneBotOwnMessageTests
         FakeTimeProvider clock = new();
         await using OneBotFixture fixture = await OneBotFixture.CreateAsync(false, false, token, settings => settings["compatibilityProfile"] = "SnowLuma", clock: clock);
         fixture.Peer.AutoRespond = false;
-        Task<SendResult> sending = fixture.Runtime.Sender.SendAsync(new OutgoingMessage { Address = OneBotFixture.Address(), Segments = [SegmentValues.Text("own")] }, token);
+        Task<BatchSendResult> sending = fixture.Runtime.Sender.SendAsync(OutgoingBatch.Single(OneBotFixture.Address(), [SegmentValues.Text("own")]), token);
         MockAction action = await fixture.WaitActionAsync("send_group_msg", token);
-        if (ordering == "late-response") { clock.Advance(TimeSpan.FromSeconds(31)); Assert.Equal(DeliveryState.Unknown, (await sending).State); }
+        if (ordering == "late-response") { clock.Advance(TimeSpan.FromSeconds(31)); Assert.Equal(DeliveryState.Unknown, Assert.Single((await sending).Messages).State); }
         if (ordering == "response-first") { await action.RespondAsync("ok", 0, JsonSerializer.SerializeToElement(new { message_id = 401 }), token); await sending; }
         using JsonDocument frame = JsonDocument.Parse(fixture.Peer.Message(401, "own"));
         Dictionary<string, JsonElement> observed = frame.RootElement.EnumerateObject().ToDictionary(item => item.Name, item => item.Value.Clone());
@@ -30,7 +30,7 @@ public sealed class OneBotOwnMessageTests
         await fixture.Peer.SendAsync(fixture.Role, JsonSerializer.Serialize(observed), token: token);
         MessageSnapshot observation = await fixture.WaitMessageAsync("401", token);
         if (ordering != "response-first") await action.RespondAsync("ok", 0, JsonSerializer.SerializeToElement(new { message_id = 401 }), token);
-        SendResult sent = await sending;
+        SendResult sent = Assert.Single((await sending).Messages);
         using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(TimeSpan.FromSeconds(10));
         while ((await fixture.Runtime.History.GetAsync(sent.MessageId!.Value, deadline.Token))!.Delivery != DeliveryState.Confirmed) await Task.Delay(1, deadline.Token);
         HistoryPage history = await fixture.Runtime.History.QueryAsync(TestStore.Query(), token);

@@ -1,14 +1,24 @@
 <Solution>
-  <Project Path="Missili.Host/Missili.Host.csproj" />
-  <Project Path="Missili.Abstractions/Missili.Abstractions.csproj" />
-  <Project Path="Missili.Kernel/Missili.Kernel.csproj" />
-  <Project Path="Missili.Matrix/Missili.Matrix.csproj" />
-  <Project Path="Missili.Nexus/Missili.Nexus.csproj" />
-  <Project Path="Missili.Persistence/Missili.Persistence.csproj" />
-  <Project Path="Missili.Adapters.OneBot/Missili.Adapters.OneBot.csproj" />
-  <Project Path="Missili.Models/Missili.Models.csproj" />
-  <Project Path="Missili.Providers.OpenAI/Missili.Providers.OpenAI.csproj" />
-  <Project Path="Missili.Providers.Anthropic/Missili.Providers.Anthropic.csproj" />
+  <Folder Name="/src/">
+    <Project Path="src/Missili.Abstractions/Missili.Abstractions.csproj" />
+    <Project Path="src/Missili.Agents/Missili.Agents.csproj" />
+    <Project Path="src/Missili.Host/Missili.Host.csproj" />
+    <Project Path="src/Missili.Kernel/Missili.Kernel.csproj" />
+    <Project Path="src/Missili.Matrix/Missili.Matrix.csproj" />
+    <Project Path="src/Missili.Models/Missili.Models.csproj" />
+    <Project Path="src/Missili.Nexus/Missili.Nexus.csproj" />
+    <Project Path="src/Missili.Persistence/Missili.Persistence.csproj" />
+  </Folder>
+  <Folder Name="/plugins/">
+    <Project Path="plugins/Missili.Adapters.OneBot/Missili.Adapters.OneBot.csproj" />
+    <Project Path="plugins/Missili.Providers.OpenAI/Missili.Providers.OpenAI.csproj" />
+    <Project Path="plugins/Missili.Providers.Anthropic/Missili.Providers.Anthropic.csproj" />
+    <Project Path="plugins/Missili.Plugins.AgentChat/Missili.Plugins.AgentChat.csproj" />
+    <Project Path="plugins/Missili.Plugins.ReplyProcessing/Missili.Plugins.ReplyProcessing.csproj" />
+    <Project Path="plugins/Missili.Tools.History/Missili.Tools.History.csproj" />
+    <Project Path="plugins/Missili.Tools.Reply/Missili.Tools.Reply.csproj" />
+    <Project Path="plugins/Missili.Tools.Shell/Missili.Tools.Shell.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Missili.Tests/Missili.Tests.csproj" />
   </Folder>

@@ -1,0 +1,87 @@
+using System.Collections.Immutable;
+using System.Text.Json;
+
+namespace Missili.Abstractions;
+
+/// <summary>媒体持久化的内部工作记录，不作为插件可见 DTO。</summary>
+public sealed record MediaWork
+{
+    public required MediaStatus Status { get; init; }
+    public required MediaSource Source { get; init; }
+    public string? SourceKey { get; init; }
+    public string? TemporaryPath { get; init; }
+    public string? RelativePath { get; init; }
+}
+
+/// <summary>持久化的顺序配置，仅包含稳定标识。</summary>
+public sealed record StoredHookOrder
+{
+    public long Revision { get; init; }
+    public bool Customized { get; init; }
+    public ImmutableArray<HandlerKey> Entries { get; init; } = [];
+}
+
+/// <summary>宿主实现之间的存储边界，插件上下文只暴露其读取子接口。</summary>
+public interface IInfrastructureStore : IMessageHistory, IMediaTranscriptionStore, IPlatformEventHistory, IAsyncDisposable
+{
+    /// <summary>应用迁移并标记上次中断业务，恢复未完成的媒体状态。</summary>
+    Task InitializeAsync(Guid runId, CancellationToken cancellationToken);
+    /// <summary>通过实际数据库查询验证存储可读取。</summary>
+    Task CheckHealthAsync(CancellationToken cancellationToken);
+    /// <summary>在一个事务中追加收到的消息及媒体引用。</summary>
+    Task<ReceiveReceipt> AppendAsync(IncomingMessage message, DateTimeOffset receivedAt, Guid runId, CancellationToken cancellationToken);
+    /// <summary>记录发送意图，返回其库内消息标识。</summary>
+    Task<MessageSnapshot> AppendOutgoingAsync(OutgoingMessage message, DateTimeOffset now, Guid runId, CancellationToken cancellationToken);
+    /// <summary>保存一次发送结果，确认成功时生成发送后分发状态。</summary>
+    Task SetDeliveryAsync(long id, TransportResult result, CancellationToken cancellationToken);
+    /// <summary>批量领取本次运行尚未分发的消息，并标记运行中。</summary>
+    Task<ImmutableArray<MessageSnapshot>> ClaimMessagesAsync(Guid runId, int count, CancellationToken cancellationToken);
+    /// <summary>保存业务结束或中断状态。</summary>
+    Task SetProcessingAsync(long id, ProcessingState state, CancellationToken cancellationToken);
+    /// <summary>宿主停止时标记未完成业务，禁止下次启动自动重放。</summary>
+    Task InterruptRunAsync(Guid runId, CancellationToken cancellationToken);
+    /// <summary>更新撤回和删除标记，保留原始内容。</summary>
+    Task SetVisibilityAsync(long id, bool recalled, bool deleted, CancellationToken cancellationToken);
+    /// <summary>保存业务事件及撤回状态，提交前不进行插件分发。</summary>
+    Task<EventReceipt> AppendEventAsync(IncomingPlatformEvent input, DateTimeOffset receivedAt, Guid runId, CancellationToken cancellationToken);
+    /// <summary>领取本次运行待分发的业务事件。</summary>
+    Task<ImmutableArray<PlatformEventSnapshot>> ClaimEventsAsync(Guid runId, int count, CancellationToken cancellationToken);
+    /// <summary>保存事件实际分发结束状态。</summary>
+    Task SetEventProcessingAsync(long id, ProcessingState state, CancellationToken cancellationToken);
+    /// <summary>按精确平台身份读取规范消息，用于引用及回执关联。</summary>
+    Task<MessageSnapshot?> FindPlatformMessageAsync(MessageAddress address, string platformId, MessageDirection? direction, CancellationToken cancellationToken);
+    /// <summary>领取有限批次归档工作，包含需要收尾的文件操作。</summary>
+    Task<ImmutableArray<MediaWork>> ClaimMediaAsync(int count, CancellationToken cancellationToken);
+    /// <summary>取得媒体内部状态。</summary>
+    Task<MediaWork?> GetMediaAsync(Guid id, CancellationToken cancellationToken);
+    /// <summary>查找稳定来源键对应的已归档原件。</summary>
+    Task<MediaWork?> FindReusableMediaAsync(string sourceKey, CancellationToken cancellationToken);
+    /// <summary>登记文件提交所需信息，使进程中断后可以恢复。</summary>
+    Task SetMediaFinalizingAsync(Guid id, string contentKey, long length, string temporaryPath, string relativePath, CancellationToken cancellationToken);
+    /// <summary>提交可用原件与当前引用关联。</summary>
+    Task CompleteMediaAsync(Guid id, string contentKey, long length, string relativePath, CancellationToken cancellationToken);
+    /// <summary>记录失败而不删除原始消息。</summary>
+    Task FailMediaAsync(Guid id, string error, CancellationToken cancellationToken);
+    /// <summary>登记流导入引用，调用者持有读取责任，后台调度不得再次领取。</summary>
+    Task<MediaWork> CreateImportedMediaAsync(MediaKind kind, JsonElement? representation, DateTimeOffset now, CancellationToken cancellationToken);
+    /// <summary>记录获取到的文件格式及转换来源，不把转换结果冒充原始编码。</summary>
+    Task SetMediaRepresentationAsync(Guid id, JsonElement? representation, CancellationToken cancellationToken);
+    /// <summary>适配器不可用时保留等待状态，不记为永久下载失败。</summary>
+    Task WaitMediaForAdapterAsync(Guid id, CancellationToken cancellationToken);
+    /// <summary>目录变化后仅唤醒仍在等待适配器的归档。</summary>
+    Task ResumeAdapterArchivesAsync(CancellationToken cancellationToken);
+    /// <summary>读取结构化内容，正文不进入聊天分发。</summary>
+    Task<StructuredContentSnapshot?> GetContentAsync(Guid id, CancellationToken cancellationToken);
+    /// <summary>按稳定来源登记结构化归档，不重新启动已失败任务。</summary>
+    Task<Guid> RequestContentAsync(ContentSource source, DateTimeOffset now, CancellationToken cancellationToken);
+    /// <summary>领取有限的结构化归档工作。</summary>
+    Task<ImmutableArray<StructuredContentSnapshot>> ClaimContentsAsync(int count, CancellationToken cancellationToken);
+    /// <summary>原子保存新增节点、媒体位置及恢复检查点，重复位置复用原引用。</summary>
+    Task<StructuredContentSnapshot> SaveContentAsync(Guid id, ContentExpansion progress, DateTimeOffset now, CancellationToken cancellationToken);
+    /// <summary>更新等待或失败状态，保留所有已取得节点。</summary>
+    Task SetContentStateAsync(Guid id, ContentState state, ContentIssue? issue, CancellationToken cancellationToken);
+    /// <summary>读取某钩子与执行阶段的持久化顺序。</summary>
+    Task<StoredHookOrder> GetHookOrderAsync(string hookId, HandlerKind kind, CancellationToken cancellationToken);
+    /// <summary>按修订号保存配置，不允许旧版本覆盖新版本。</summary>
+    Task<StoredHookOrder> SaveHookOrderAsync(string hookId, HandlerKind kind, ImmutableArray<HandlerKey> entries, bool customized, long expectedRevision, CancellationToken cancellationToken);
+}

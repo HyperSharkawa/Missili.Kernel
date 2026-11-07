@@ -1,9 +1,0 @@
-{
-  "schemaVersion": 1,
-  "id": "missili.onebot11",
-  "name": "OneBot v11 适配器",
-  "version": "0.2.0",
-  "entryAssembly": "Missili.Adapters.OneBot.dll",
-  "entryType": "Missili.Adapters.OneBot.Entry",
-  "contractVersion": 3
-}

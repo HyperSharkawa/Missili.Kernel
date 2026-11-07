@@ -50,14 +50,14 @@ public sealed class OneBotSegmentTests
             { ["messageId"] = "7", ["authorSnapshot"] = "private", ["archiveState"] = "complete" })
         };
         MessageSegment forward = SegmentValues.Forward([new ForwardNode { UserId = "30001", Nickname = "合成作者", Segments = [SegmentValues.Text("节点正文")] }]);
-        SendResult result = await fixture.Runtime.Sender.SendAsync(new OutgoingMessage { Address = OneBotFixture.Address(), Segments = [reply, forward] }, token);
+        SendResult result = Assert.Single((await fixture.Runtime.Sender.SendAsync(OutgoingBatch.Single(OneBotFixture.Address(), [reply, forward]), token)).Messages);
         Assert.Equal(DeliveryState.Confirmed, result.State);
         JsonElement message = (await fixture.WaitActionAsync("send_group_msg", token)).Parameters.GetProperty("message");
         Assert.Single(message[0].GetProperty("data").EnumerateObject());
         Assert.Equal("7", message[0].GetProperty("data").GetProperty("id").GetString());
         Assert.Equal("node", message[1].GetProperty("type").GetString());
         Assert.Equal("节点正文", message[1].GetProperty("data").GetProperty("content")[0].GetProperty("data").GetProperty("text").GetString());
-        SendResult unknown = await fixture.Runtime.Sender.SendAsync(new OutgoingMessage { Address = OneBotFixture.Address(), Segments = [new MessageSegment { Kind = "onebot11.future" }] }, token);
+        SendResult unknown = Assert.Single((await fixture.Runtime.Sender.SendAsync(OutgoingBatch.Single(OneBotFixture.Address(), [new MessageSegment { Kind = "onebot11.future" }]), token)).Messages);
         Assert.Equal(DeliveryState.Failed, unknown.State);
         Assert.Single(fixture.Peer.RecordedActions, action => action.GetProperty("action").GetString() == "send_group_msg");
     }

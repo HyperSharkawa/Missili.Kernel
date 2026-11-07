@@ -1,7 +1,7 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using Missili.Abstractions;
-using Missili.Tools.ModelMock;
+using Missili.Model.Mock;
 using Xunit;
 
 namespace Missili.Tests;

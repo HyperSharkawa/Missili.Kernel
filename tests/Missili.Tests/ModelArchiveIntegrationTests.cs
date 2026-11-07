@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Missili.Abstractions;
-using Missili.Tools.ModelMock;
+using Missili.Model.Mock;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using Xunit;
@@ -25,7 +25,7 @@ public sealed class ModelArchiveIntegrationTests
         string variable = "MISSILI_ARCHIVE_MODEL_" + Guid.NewGuid().ToString("N"); Environment.SetEnvironmentVariable(variable, "synthetic");
         try
         {
-            ModelConfiguration config = ModelMediaTests.ImageConfiguration(mock.BaseAddress, variable, ModelProtocol.ChatCompletions);
+            ConversationConfiguration config = ModelMediaTests.ImageConfiguration(mock.BaseAddress, variable, ModelProtocol.ChatCompletions);
             config = config with { Providers = [config.Providers[0] with { MaxConcurrency = 1 }] };
             await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(token, models: config, modelOptions: new ModelOptions { NetworkConcurrency = 1, QueueCapacity = 1 });
             await ModelMediaTests.LoadProviderAsync(fixture, ModelProtocol.ChatCompletions, token);
@@ -40,7 +40,7 @@ public sealed class ModelArchiveIntegrationTests
             Assert.Equal(0, mock.TotalRequests);
             config = config with { Profiles = [config.Profiles[0] with { Images = background ? ModelMediaPolicy.TranscriptionPreferred : ModelMediaPolicy.TextOnly }] };
             await fixture.WriteModelsAsync(config, token);
-            await fixture.Runtime.Models.Profiles.ReloadAsync(token);
+            await fixture.Runtime.Profiles.ReloadAsync(token);
             using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(TimeSpan.FromSeconds(10));
             if (background)
             {
@@ -53,7 +53,7 @@ public sealed class ModelArchiveIntegrationTests
             else
             {
                 ConversationContextSnapshot context = await fixture.Runtime.Models.Contexts.CaptureAsync(new MessageContext { OriginalMessage = message, CurrentContent = message.Segments }, deadline.Token);
-                ModelResult result = await fixture.Runtime.Models.GenerateAsync(new ModelRequest { Purpose = "reply", Profile = context.Profile, Context = context, Candidates = ["vision"], Messages = [] }, cancellationToken: deadline.Token);
+                ModelResult result = await fixture.Runtime.Models.GenerateAsync(new ModelRequest { Purpose = "reply", Profile = context.Profile, Input = ModelInput.FromConversation(context, "根据会话资料回答。"), Candidates = ["vision"] }, cancellationToken: deadline.Token);
                 Assert.True(result.Complete, result.Error); Assert.Equal(2, mock.TotalRequests);
                 Assert.DoesNotContain("image_url", mock.Requests[1].Body!.Value.GetRawText());
             }

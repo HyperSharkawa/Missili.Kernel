@@ -1,0 +1,3 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup><ProjectReference Include="$(MissiliRepositoryRoot)src/Missili.Abstractions/Missili.Abstractions.csproj" /></ItemGroup>
+</Project>

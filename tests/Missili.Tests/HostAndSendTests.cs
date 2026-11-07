@@ -35,7 +35,7 @@ public sealed class HostAndSendTests
             await release.Task;
             return new TransportResult { State = DeliveryState.Confirmed };
         };
-        Task<SendResult> sending = fixture.Runtime.Sender.SendAsync(Text(), token);
+        Task<BatchSendResult> sending = fixture.Runtime.Sender.SendAsync(Text(), token);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(5), token);
         Task stopping = fixture.Runtime.StopAsync(token);
         try
@@ -46,10 +46,10 @@ public sealed class HostAndSendTests
         }
         finally { release.TrySetResult(); }
         await stopping.WaitAsync(TimeSpan.FromSeconds(5), token);
-        SendResult result = await sending;
+        SendResult result = Assert.Single((await sending).Messages);
         Assert.Equal(DeliveryState.Confirmed, result.State);
         Assert.True(result.Recorded);
-        Assert.Equal(DeliveryState.Cancelled, (await fixture.Runtime.Sender.SendAsync(Text(), token)).State);
+        Assert.Equal(BatchSendState.Cancelled, (await fixture.Runtime.Sender.SendAsync(Text(), token)).State);
         Assert.Single(fixture.Transport.Requests);
     }
 
@@ -62,7 +62,7 @@ public sealed class HostAndSendTests
         CancellationToken token = TestContext.Current.CancellationToken;
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(token);
         fixture.Transport.OnSend = (_, _, _) => Task.FromResult(new TransportResult { State = state, Error = "synthetic" });
-        SendResult result = await fixture.Runtime.Sender.SendAsync(Text(), token);
+        SendResult result = Assert.Single((await fixture.Runtime.Sender.SendAsync(Text(), token)).Messages);
         Assert.Equal(state, result.State);
         Assert.True(result.Recorded);
         Assert.Equal(state, (await fixture.Runtime.History.GetAsync(result.MessageId!.Value, token))!.Delivery);
@@ -75,7 +75,7 @@ public sealed class HostAndSendTests
     {
         CancellationToken token = TestContext.Current.CancellationToken;
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(token);
-        SendResult result = await fixture.Runtime.Sender.SendAsync(Text() with { Address = TestStore.Address() with { AdapterId = "missing" } }, token);
+        SendResult result = Assert.Single((await fixture.Runtime.Sender.SendAsync(Text() with { Address = TestStore.Address() with { AdapterId = "missing" } }, token)).Messages);
         Assert.Equal(DeliveryState.Failed, result.State);
         Assert.Contains("尚未注册", result.Error);
         Assert.Empty(fixture.Transport.Requests);
@@ -102,7 +102,7 @@ public sealed class HostAndSendTests
             using HttpResponseMessage live = await client.GetAsync("/health/live", token);
             using HttpResponseMessage ready = await client.GetAsync("/health/ready", token);
             Assert.Equal(HttpStatusCode.OK, live.StatusCode);
-            Assert.Equal("{\"status\":\"ready\"}", await ready.Content.ReadAsStringAsync(token));
+            Assert.Equal("{\"status\":\"ready\",\"agents\":{\"activeTasks\":0,\"workingAgents\":0,\"waitingAgents\":0,\"pendingWakeAdmissions\":0}}", await ready.Content.ReadAsStringAsync(token));
             using HttpResponseMessage oldTemplate = await client.GetAsync("/weatherforecast", token);
             using HttpResponseMessage management = await client.GetAsync("/api/plugins", token);
             Assert.Equal(HttpStatusCode.NotFound, oldTemplate.StatusCode);
@@ -135,10 +135,10 @@ public sealed class HostAndSendTests
             return new TransportResult { State = DeliveryState.Confirmed };
         };
         using CancellationTokenSource caller = CancellationTokenSource.CreateLinkedTokenSource(token);
-        Task<SendResult> sending = fixture.Runtime.Sender.SendAsync(Text(), caller.Token);
+        Task<BatchSendResult> sending = fixture.Runtime.Sender.SendAsync(Text(), caller.Token);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(5), token);
         await caller.CancelAsync();
-        SendResult result = await sending.WaitAsync(TimeSpan.FromSeconds(5), token);
+        SendResult result = Assert.Single((await sending.WaitAsync(TimeSpan.FromSeconds(5), token)).Messages);
         Assert.Equal(DeliveryState.Unknown, result.State);
         Assert.True(result.Recorded);
         Assert.Single(fixture.Transport.Requests);
@@ -153,8 +153,9 @@ public sealed class HostAndSendTests
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(token);
         using CancellationTokenSource caller = new();
         await caller.CancelAsync();
-        SendResult result = await fixture.Runtime.Sender.SendAsync(Text(), caller.Token);
-        Assert.Equal(DeliveryState.Cancelled, result.State);
+        BatchSendResult result = await fixture.Runtime.Sender.SendAsync(Text(), caller.Token);
+        Assert.Equal(BatchSendState.Cancelled, result.State);
+        Assert.Empty(result.Messages);
         Assert.Empty(fixture.Transport.Requests);
     }
 
@@ -165,7 +166,7 @@ public sealed class HostAndSendTests
         CancellationToken token = TestContext.Current.CancellationToken;
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(token);
         fixture.Transport.OnSend = (_, _, _) => Task.FromResult(new TransportResult { State = DeliveryState.Unknown, Error = "synthetic" });
-        SendResult sent = await fixture.Runtime.Sender.SendAsync(Text(), token);
+        SendResult sent = Assert.Single((await fixture.Runtime.Sender.SendAsync(Text(), token)).Messages);
         await fixture.Runtime.DisposeAsync();
         // 构造旧运行留下的待处理记录，而非通过新运行入口提交。
         await using (Missili.Persistence.SqliteStore store = new(Path.Combine(fixture.Root, "history.db"), fixture.Options))
@@ -182,6 +183,5 @@ public sealed class HostAndSendTests
     }
 
     /// <summary>提供统一的纯文本发送输入。</summary>
-    private static OutgoingMessage Text() => new()
-    { Address = TestStore.Address(), Segments = [new MessageSegment { Kind = SegmentTypes.Text, Text = "synthetic" }] };
+    private static OutgoingBatch Text() => OutgoingBatch.Single(TestStore.Address(), [SegmentValues.Text("synthetic")]);
 }

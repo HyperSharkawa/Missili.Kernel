@@ -5,5 +5,5 @@
   "version": "1.0.0",
   "entryAssembly": "Missili.Sample.Keyword.dll",
   "entryType": "Missili.Samples.Keyword.Entry",
-  "contractVersion": 3
+  "contractVersion": 5
 }

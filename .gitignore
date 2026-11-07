@@ -1,9 +1,11 @@
 /.context/
+/docs/
 /artifacts/
 **/bin/
 **/obj/
 /.vs/
 /data/
 /Missili.Host/data/
+/src/Missili.Host/data/
 **/TestResults/
 *.csproj.user

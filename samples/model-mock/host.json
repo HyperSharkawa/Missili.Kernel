@@ -1,6 +1,6 @@
 {
-  "Infrastructure": { "DataDirectory": "data" },
-  "Models": { "Enabled": true, "ConfigurationDirectory": "../../samples/model-config" },
+  "Infrastructure": { "DataDirectory": "data", "ConversationConfigurationDirectory": "../../samples/model-config" },
+  "Models": { "Enabled": true },
   "Plugins": [
     { "Enabled": true, "Directory": "plugins/openai" },
     { "Enabled": true, "Directory": "plugins/anthropic" },

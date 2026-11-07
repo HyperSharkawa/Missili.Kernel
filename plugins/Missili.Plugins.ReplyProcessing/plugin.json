@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "missili.plugins.reply-processing",
+  "name": "回复内容后处理",
+  "version": "0.4.0",
+  "entryAssembly": "Missili.Plugins.ReplyProcessing.dll",
+  "entryType": "Missili.Plugins.ReplyProcessing.ReplyProcessingPlugin",
+  "contractVersion": 5
+}

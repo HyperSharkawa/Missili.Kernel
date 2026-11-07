@@ -3,7 +3,10 @@
   <ItemGroup>
     <Compile Include="../Shared/Entry.cs" Link="Entry.cs" />
     <Compile Include="../Shared/Adapter.cs" Link="Adapter.cs" />
-    <ProjectReference Include="../../../Missili.Abstractions/Missili.Abstractions.csproj" Private="false" ExcludeAssets="runtime" />
+    <Compile Include="../Shared/Tool.cs" Link="Tool.cs" />
+    <Compile Include="../Shared/Outgoing.cs" Link="Outgoing.cs" />
+    <Compile Include="../Shared/ExecutionProbe.cs" Link="ExecutionProbe.cs" />
+    <ProjectReference Include="$(MissiliRepositoryRoot)src/Missili.Abstractions/Missili.Abstractions.csproj" Private="false" ExcludeAssets="runtime" />
     <ProjectReference Include="../DependencyV1/DependencyV1.csproj" />
   </ItemGroup>
 </Project>

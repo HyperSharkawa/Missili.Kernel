@@ -26,7 +26,7 @@ public sealed class AdapterInfrastructureTests
         Assert.Single(fixture.Runtime.Adapters.GetStatuses());
         string conflict = await fixture.PackageAsync("conflict", "v1", token);
         Assert.Equal(PluginState.Faulted, (await fixture.Runtime.Plugins.LoadAsync(conflict, RuntimeFixture.Configuration("adapter-with-handler"), token)).State);
-        Assert.DoesNotContain(((IPluginRuntime)fixture.Runtime.Plugins).Capture(MessageHooks.Received, HandlerKind.Command), item => item.Key.PluginId == "conflict");
+        Assert.DoesNotContain(fixture.Runtime.Handlers.Capture(MessageHooks.Received, HandlerKind.Command), item => item.Key.PluginId == "conflict");
         await Assert.ThrowsAsync<ArgumentException>(() => fixture.Runtime.Adapters.InvokeAsync("fixture-adapter", "bot", "send_msg_async", JsonSerializer.SerializeToElement(new { }), token));
     }
 
@@ -110,8 +110,7 @@ public sealed class AdapterInfrastructureTests
         await using MediaReadResult b = await fixture.Runtime.Media.OpenReadAsync(right.Id, token);
         Assert.Equal((int)'s', a.Content!.ReadByte());
         Assert.Equal(0, b.Content!.Position);
-        SendResult sent = await fixture.Runtime.Sender.SendAsync(new OutgoingMessage
-        { Address = TestStore.Address(), Segments = [new MessageSegment { Kind = SegmentTypes.Image, MediaIds = [left.Id] }] }, token);
+        SendResult sent = Assert.Single((await fixture.Runtime.Sender.SendAsync(OutgoingBatch.Single(TestStore.Address(), [new MessageSegment { Kind = SegmentTypes.Image, MediaIds = [left.Id] }]), token)).Messages);
         Assert.Equal(DeliveryState.Confirmed, sent.State);
         Assert.Single((await fixture.Runtime.History.QueryAsync(TestStore.Query(), token)).Messages);
     }

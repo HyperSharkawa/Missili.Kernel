@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+    <DockerfileContext>../..</DockerfileContext>
+    <OfficialPluginPackageAfterTargets>Publish</OfficialPluginPackageAfterTargets>
+  </PropertyGroup>
+
+  <Import Project="../../build/OfficialPlugins.props" />
+
+  <ItemGroup>
+    <Content Include="$(MissiliRepositoryRoot)third-party/codex-approval/*" Link="third-party/codex-approval/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <ProjectReference Include="$(MissiliRepositoryRoot)src/Missili.Kernel/Missili.Kernel.csproj" />
+    <ProjectReference Include="$(MissiliRepositoryRoot)src/Missili.Matrix/Missili.Matrix.csproj" />
+    <ProjectReference Include="$(MissiliRepositoryRoot)src/Missili.Models/Missili.Models.csproj" />
+    <ProjectReference Include="$(MissiliRepositoryRoot)src/Missili.Nexus/Missili.Nexus.csproj" />
+    <ProjectReference Include="$(MissiliRepositoryRoot)src/Missili.Persistence/Missili.Persistence.csproj" />
+    <ProjectReference Include="@(OfficialPlugin)" ReferenceOutputAssembly="false" Private="false" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
+    <PackageReference Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" Version="1.24.2-preview.1" />
+  </ItemGroup>
+
+
+  <Import Project="../../build/OfficialPlugins.targets" />
+</Project>

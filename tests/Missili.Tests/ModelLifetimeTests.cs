@@ -3,7 +3,7 @@ using System.Threading.Channels;
 using Microsoft.Extensions.Time.Testing;
 using Missili.Abstractions;
 using Missili.Nexus;
-using Missili.Tools.ModelMock;
+using Missili.Model.Mock;
 using Xunit;
 
 namespace Missili.Tests;
@@ -47,7 +47,7 @@ public sealed class ModelLifetimeTests
         string variable = "MISSILI_LIFETIME_" + Guid.NewGuid().ToString("N"); Environment.SetEnvironmentVariable(variable, "synthetic");
         try
         {
-            ModelConfiguration config = ModelFailureTests.Configuration(mock.BaseAddress, variable, ModelProtocol.ChatCompletions);
+            ConversationConfiguration config = ModelFailureTests.Configuration(mock.BaseAddress, variable, ModelProtocol.ChatCompletions);
             config = config with { Profiles = [config.Profiles[0] with { Execution = new ModelExecutionOptions { Rounds = 1, HeadersTimeout = TimeSpan.FromSeconds(11), ReadIdleTimeout = TimeSpan.FromSeconds(13) } }] };
             await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(token, clock: clock, models: config);
             await ModelMediaTests.LoadProviderAsync(fixture, ModelProtocol.ChatCompletions, token);
@@ -75,7 +75,7 @@ public sealed class ModelLifetimeTests
         string variable = "MISSILI_LIFETIME_" + Guid.NewGuid().ToString("N"); Environment.SetEnvironmentVariable(variable, "synthetic");
         try
         {
-            ModelConfiguration config = ModelFailureTests.Configuration(mock.BaseAddress, variable, ModelProtocol.ChatCompletions);
+            ConversationConfiguration config = ModelFailureTests.Configuration(mock.BaseAddress, variable, ModelProtocol.ChatCompletions);
             config = config with { Profiles = [config.Profiles[0] with { Execution = new ModelExecutionOptions() }] };
             await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(token, clock: clock, models: config);
             await ModelMediaTests.LoadProviderAsync(fixture, ModelProtocol.ChatCompletions, token);
@@ -104,7 +104,7 @@ public sealed class ModelLifetimeTests
         string variable = "MISSILI_LIFETIME_" + Guid.NewGuid().ToString("N"); Environment.SetEnvironmentVariable(variable, "synthetic");
         try
         {
-            ModelConfiguration config = ModelFailureTests.Configuration(mock.BaseAddress, variable, ModelProtocol.ChatCompletions);
+            ConversationConfiguration config = ModelFailureTests.Configuration(mock.BaseAddress, variable, ModelProtocol.ChatCompletions);
             config = config with
             {
                 Providers = config.Providers.Add(new ModelProviderDefinition { Id = "other", Protocol = ModelProtocol.Anthropic, BaseUrl = mock.BaseAddress, ApiKeyEnvironmentVariable = variable }),
@@ -119,7 +119,7 @@ public sealed class ModelLifetimeTests
             await mock.NextRequestAsync(token);
             Task<ModelResult> other = fixture.Runtime.Models.GenerateAsync(ModelFailureTests.Request(fixture) with { Candidates = ["B"] }, cancellationToken: token);
             await mock.NextRequestAsync(token);
-            PluginStatus reloaded = await fixture.Runtime.Plugins.ReloadAsync("missili.providers.openai", Path.Combine(AppContext.BaseDirectory, "Providers/openai"), RuntimeFixture.Configuration(), token);
+            PluginStatus reloaded = await fixture.Runtime.Plugins.ReloadAsync("missili.providers.openai", OfficialPluginPackages.GetPath("openai"), RuntimeFixture.Configuration(), token);
             Assert.Equal(PluginState.Active, reloaded.State);
             WeakReference reference = ((PluginManager)fixture.Runtime.Plugins).GetLastUnloadReference(reloaded.Id)!;
             ModelResult interrupted = await old;

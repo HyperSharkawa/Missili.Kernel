@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="$(MissiliRepositoryRoot)src/Missili.Abstractions/Missili.Abstractions.csproj" />
+    <ProjectReference Include="$(MissiliRepositoryRoot)src/Missili.Agents/Missili.Agents.csproj" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="$(ExtensionsVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="$(ExtensionsVersion)" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="$(MissiliRepositoryRoot)third-party/codex-approval/*" Link="licenses/codex-approval/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

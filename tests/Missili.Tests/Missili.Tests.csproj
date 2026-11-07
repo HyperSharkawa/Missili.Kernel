@@ -1,29 +1,29 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <IsTestProject>true</IsTestProject>
+    <OfficialPluginPackageAfterTargets>Build</OfficialPluginPackageAfterTargets>
     <!-- 显式使用 VSTest；MTP v2 在 .NET 10 下不再接受 VSTest 桥接入口。
          https://learn.microsoft.com/dotnet/core/testing/microsoft-testing-platform-migration-from-v1-to-v2 -->
     <IsTestingPlatformApplication>false</IsTestingPlatformApplication>
     <IsPackable>false</IsPackable>
     <OutputType>Exe</OutputType>
   </PropertyGroup>
+  <Import Project="../../build/OfficialPlugins.props" />
   <ItemGroup>
-    <ProjectReference Include="../../Missili.Providers.OpenAI/Missili.Providers.OpenAI.csproj" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="../../Missili.Providers.Anthropic/Missili.Providers.Anthropic.csproj" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="../../Missili.Models/Missili.Models.csproj" />
+    <ProjectReference Include="@(OfficialPlugin)" ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="$(MissiliRepositoryRoot)src/Missili.Models/Missili.Models.csproj" />
     <ProjectReference Include="../Fixtures/PluginV1/PluginV1.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../Fixtures/PluginV2/PluginV2.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../../samples/Missili.Sample.Keyword/Missili.Sample.Keyword.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../../samples/Missili.Sample.History/Missili.Sample.History.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../../samples/Missili.Sample.ModelChat/Missili.Sample.ModelChat.csproj" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="../../Missili.Host/Missili.Host.csproj" />
+    <ProjectReference Include="$(MissiliRepositoryRoot)src/Missili.Host/Missili.Host.csproj" />
     <ProjectReference Include="../../tools/Missili.OneBot.Mock/Missili.OneBot.Mock.csproj" />
     <ProjectReference Include="../../tools/Missili.Model.Mock/Missili.Model.Mock.csproj" />
-    <ProjectReference Include="../../Missili.Adapters.OneBot/Missili.Adapters.OneBot.csproj" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="../../Missili.Matrix/Missili.Matrix.csproj" />
-    <ProjectReference Include="../../Missili.Nexus/Missili.Nexus.csproj" />
-    <ProjectReference Include="../../Missili.Persistence/Missili.Persistence.csproj" />
-    <ProjectReference Include="../../Missili.Kernel/Missili.Kernel.csproj" />
+    <ProjectReference Include="$(MissiliRepositoryRoot)src/Missili.Matrix/Missili.Matrix.csproj" />
+    <ProjectReference Include="$(MissiliRepositoryRoot)src/Missili.Nexus/Missili.Nexus.csproj" />
+    <ProjectReference Include="$(MissiliRepositoryRoot)src/Missili.Persistence/Missili.Persistence.csproj" />
+    <ProjectReference Include="$(MissiliRepositoryRoot)src/Missili.Kernel/Missili.Kernel.csproj" />
     <PackageReference Include="xunit.v3" Version="4.0.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" PrivateAssets="all" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
@@ -38,17 +38,12 @@
       <KeywordSample Include="../../samples/Missili.Sample.Keyword/bin/$(Configuration)/net10.0/**/*" />
       <HistorySample Include="../../samples/Missili.Sample.History/bin/$(Configuration)/net10.0/**/*" />
       <ModelSample Include="../../samples/Missili.Sample.ModelChat/bin/$(Configuration)/net10.0/**/*" />
-      <OneBotPlugin Include="../../Missili.Adapters.OneBot/bin/$(Configuration)/net10.0/**/*" />
-      <OpenAIPlugin Include="../../Missili.Providers.OpenAI/bin/$(Configuration)/net10.0/**/*" />
-      <AnthropicPlugin Include="../../Missili.Providers.Anthropic/bin/$(Configuration)/net10.0/**/*" />
     </ItemGroup>
     <Copy SourceFiles="@(FixtureV1)" DestinationFiles="@(FixtureV1->'$(OutDir)Fixtures/v1/%(RecursiveDir)%(Filename)%(Extension)')" />
     <Copy SourceFiles="@(FixtureV2)" DestinationFiles="@(FixtureV2->'$(OutDir)Fixtures/v2/%(RecursiveDir)%(Filename)%(Extension)')" />
     <Copy SourceFiles="@(KeywordSample)" DestinationFiles="@(KeywordSample->'$(OutDir)Samples/keyword/%(RecursiveDir)%(Filename)%(Extension)')" />
     <Copy SourceFiles="@(HistorySample)" DestinationFiles="@(HistorySample->'$(OutDir)Samples/history/%(RecursiveDir)%(Filename)%(Extension)')" />
     <Copy SourceFiles="@(ModelSample)" DestinationFiles="@(ModelSample->'$(OutDir)Samples/model/%(RecursiveDir)%(Filename)%(Extension)')" />
-    <Copy SourceFiles="@(OneBotPlugin)" DestinationFiles="@(OneBotPlugin->'$(OutDir)Adapters/onebot/%(RecursiveDir)%(Filename)%(Extension)')" />
-    <Copy SourceFiles="@(OpenAIPlugin)" DestinationFiles="@(OpenAIPlugin->'$(OutDir)Providers/openai/%(RecursiveDir)%(Filename)%(Extension)')" />
-    <Copy SourceFiles="@(AnthropicPlugin)" DestinationFiles="@(AnthropicPlugin->'$(OutDir)Providers/anthropic/%(RecursiveDir)%(Filename)%(Extension)')" />
   </Target>
+  <Import Project="../../build/OfficialPlugins.targets" />
 </Project>

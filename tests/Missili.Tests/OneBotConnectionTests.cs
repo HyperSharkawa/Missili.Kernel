@@ -64,10 +64,10 @@ public sealed class OneBotConnectionTests
         FakeTimeProvider clock = new();
         await using OneBotFixture fixture = await OneBotFixture.CreateAsync(false, false, token, clock: clock);
         fixture.Peer.AutoRespond = false;
-        Task<SendResult> send = fixture.Runtime.Sender.SendAsync(new OutgoingMessage { Address = OneBotFixture.Address(), Segments = [SegmentValues.Text("late")] }, token);
+        Task<BatchSendResult> send = fixture.Runtime.Sender.SendAsync(OutgoingBatch.Single(OneBotFixture.Address(), [SegmentValues.Text("late")]), token);
         MockAction action = await fixture.WaitActionAsync("send_group_msg", token);
         clock.Advance(TimeSpan.FromSeconds(31));
-        SendResult timeout = await send.WaitAsync(TimeSpan.FromSeconds(5), token);
+        SendResult timeout = Assert.Single((await send.WaitAsync(TimeSpan.FromSeconds(5), token)).Messages);
         Assert.Equal(DeliveryState.Unknown, timeout.State);
         await action.RespondAsync("ok", 0, JsonSerializer.SerializeToElement(new { message_id = 1234 }), token);
         MessageSnapshot stored = await fixture.WaitMessageAsync("1234", token);
@@ -86,11 +86,11 @@ public sealed class OneBotConnectionTests
         CancellationToken token = TestContext.Current.CancellationToken;
         await using OneBotFixture fixture = await OneBotFixture.CreateAsync(false, false, token);
         fixture.Peer.AutoRespond = false;
-        Task<SendResult> sending = fixture.Runtime.Sender.SendAsync(new OutgoingMessage { Address = OneBotFixture.Address(), Segments = [SegmentValues.Text("state")] }, token);
+        Task<BatchSendResult> sending = fixture.Runtime.Sender.SendAsync(OutgoingBatch.Single(OneBotFixture.Address(), [SegmentValues.Text("state")]), token);
         MockAction action = await fixture.WaitActionAsync("send_group_msg", token);
         await action.RespondAsync(status, retcode, null, token);
-        Assert.Equal(expected, (await sending).State);
-        Assert.Equal(expected, (await fixture.Runtime.History.GetAsync((await sending).MessageId!.Value, token))!.Delivery);
+        Assert.Equal(expected, Assert.Single((await sending).Messages).State);
+        Assert.Equal(expected, (await fixture.Runtime.History.GetAsync(Assert.Single((await sending).Messages).MessageId!.Value, token))!.Delivery);
     }
 
     /// <summary>请求进入网络后的取消与离线新发送有不同结果，并且不跨重连排队。</summary>
@@ -101,13 +101,13 @@ public sealed class OneBotConnectionTests
         await using OneBotFixture fixture = await OneBotFixture.CreateAsync(true, false, token);
         fixture.Peer.AutoRespond = false;
         using CancellationTokenSource cancel = CancellationTokenSource.CreateLinkedTokenSource(token);
-        Task<SendResult> sending = fixture.Runtime.Sender.SendAsync(new OutgoingMessage { Address = OneBotFixture.Address(), Segments = [SegmentValues.Text("cancel")] }, cancel.Token);
+        Task<BatchSendResult> sending = fixture.Runtime.Sender.SendAsync(OutgoingBatch.Single(OneBotFixture.Address(), [SegmentValues.Text("cancel")]), cancel.Token);
         await fixture.WaitActionAsync("send_group_msg", token); cancel.Cancel();
-        Assert.Equal(DeliveryState.Unknown, (await sending).State);
+        Assert.Equal(DeliveryState.Unknown, Assert.Single((await sending).Messages).State);
         fixture.Peer.Abort("Universal");
         using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(TimeSpan.FromSeconds(10));
         while (fixture.Runtime.Adapters.GetStatuses().Any(item => item.ApiAvailable)) await Task.Delay(1, deadline.Token);
-        SendResult offline = await fixture.Runtime.Sender.SendAsync(new OutgoingMessage { Address = OneBotFixture.Address(), Segments = [SegmentValues.Text("offline")] }, token);
+        SendResult offline = Assert.Single((await fixture.Runtime.Sender.SendAsync(OutgoingBatch.Single(OneBotFixture.Address(), [SegmentValues.Text("offline")]), token)).Messages);
         Assert.Equal(DeliveryState.Failed, offline.State);
         Assert.Single(fixture.Peer.RecordedActions, item => item.GetProperty("action").GetString() == "send_group_msg");
     }

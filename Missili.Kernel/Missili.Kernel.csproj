@@ -1,7 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <ItemGroup>
-    <ProjectReference Include="../Missili.Abstractions/Missili.Abstractions.csproj" />
-    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="$(ExtensionsVersion)" />
-    <PackageReference Include="Microsoft.Extensions.Options" Version="$(ExtensionsVersion)" />
-  </ItemGroup>
-</Project>

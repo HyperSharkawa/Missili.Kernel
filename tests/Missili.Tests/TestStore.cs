@@ -14,6 +14,8 @@ internal sealed class TestStore : IAsyncDisposable
     public SqliteStore Store { get; }
     public Guid RunId { get; } = Guid.NewGuid();
     public static DateTimeOffset Now { get; } = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+    /// <summary>直接调用宿主的合成测试显式提供唤醒证据；实际入口规则由独立 DLL 用例验证。</summary>
+    public static AgentWakeCause WakeCause { get; } = new() { Kind = AgentWakeKind.Keyword, MatchedText = "synthetic" };
 
     /// <summary>创建唯一测试目录和尚未初始化的存储。</summary>
     private TestStore()

@@ -1,7 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <ItemGroup>
-    <ProjectReference Include="../Missili.Abstractions/Missili.Abstractions.csproj" />
-    <ProjectReference Include="../Missili.Matrix/Missili.Matrix.csproj" />
-    <PackageReference Include="Missili.ThirdParty.ImageSharp" Version="[4.1.3-missili.2]" />
-  </ItemGroup>
-</Project>

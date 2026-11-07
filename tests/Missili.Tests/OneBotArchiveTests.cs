@@ -25,7 +25,7 @@ public sealed class OneBotArchiveTests
         await fixture.Peer.SendAsync(fixture.Role, WithSegments(fixture, 99, """[{"type":"record","data":{"file":"held.silk"}}]"""), token: token);
         await first.Task.WaitAsync(TimeSpan.FromSeconds(10), token);
         MessageSnapshot message = await fixture.WaitMessageAsync("99", token);
-        Assert.Equal(PluginState.Active, (await fixture.Runtime.Plugins.ReloadAsync("missili.onebot11", Path.Combine(AppContext.BaseDirectory, "Adapters", "onebot"), fixture.Configuration(), token)).State);
+        Assert.Equal(PluginState.Active, (await fixture.Runtime.Plugins.ReloadAsync("missili.onebot11", OfficialPluginPackages.GetPath("onebot"), fixture.Configuration(), token)).State);
         using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(TimeSpan.FromSeconds(10));
         await using MediaReadResult media = await fixture.Runtime.Media.OpenReadAsync(message.Segments[0].MediaIds[0], deadline.Token);
         Assert.Equal(MediaState.Available, media.Status.State);
@@ -46,7 +46,7 @@ public sealed class OneBotArchiveTests
         using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(token); deadline.CancelAfter(TimeSpan.FromSeconds(10));
         await using MediaReadResult media = await fixture.Runtime.Media.OpenReadAsync(stored.Segments[0].MediaIds[0], deadline.Token);
         Assert.Equal(MediaState.Available, media.Status.State);
-        SendResult sent = await fixture.Runtime.Sender.SendAsync(new OutgoingMessage { Address = OneBotFixture.Address(), Segments = stored.Segments }, token);
+        SendResult sent = Assert.Single((await fixture.Runtime.Sender.SendAsync(OutgoingBatch.Single(OneBotFixture.Address(), stored.Segments), token)).Messages);
         Assert.Equal(DeliveryState.Confirmed, sent.State);
         JsonElement data = (await fixture.WaitActionAsync("send_group_msg", token)).Parameters.GetProperty("message")[0].GetProperty("data");
         Assert.Equal("base64://" + Convert.ToBase64String(fixture.Peer.Media), data.GetProperty("file").GetString());

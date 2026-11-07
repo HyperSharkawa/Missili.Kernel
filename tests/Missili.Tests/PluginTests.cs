@@ -10,6 +10,22 @@ namespace Missili.Tests;
 /// <summary>真实 DLL 与私有依赖的加载、替换和实际回收验收。</summary>
 public sealed class PluginTests
 {
+    /// <summary>契约 4 在实例化前明确拒载，不发布处理器或尝试旧源码适配。</summary>
+    [Fact]
+    public async Task PreviousContractIsRejectedBeforeLoading()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(token);
+        string package = await fixture.PackageAsync("old-contract", "v1", token);
+        string path = Path.Combine(package, "plugin.json");
+        System.Text.Json.Nodes.JsonObject manifest = System.Text.Json.Nodes.JsonNode.Parse(await File.ReadAllTextAsync(path, token))!.AsObject();
+        manifest["contractVersion"] = 4;
+        await File.WriteAllTextAsync(path, manifest.ToJsonString(), token);
+        InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(() => fixture.Runtime.Plugins.LoadAsync(package, RuntimeFixture.Configuration(), token));
+        Assert.Contains("契约版本", error.Message);
+        Assert.Empty(fixture.Runtime.Plugins.GetStatuses());
+    }
+
     /// <summary>本地 ZIP 使用实际安装和加载流程，越界包在写入前拒绝。</summary>
     [Fact]
     public async Task ZipInstallationUsesRealPackageAndRejectsTraversal()
@@ -127,7 +143,7 @@ public sealed class PluginTests
         ReceiveReceipt input = await fixture.Runtime.ReceiveAsync(TestStore.Message(), token);
         await fixture.FinishedAsync(input.Message!.Id, token);
         Assert.Empty(fixture.Transport.Requests);
-        Assert.All(((IPluginRuntime)fixture.Runtime.Plugins).Capture(MessageHooks.Received, HandlerKind.Listener), handler => Assert.False(handler.Enabled));
+        Assert.All(fixture.Runtime.Handlers.Capture(MessageHooks.Received, HandlerKind.Listener), handler => Assert.False(handler.Enabled));
     }
 
     /// <summary>忽略取消时，默认三十秒到期仍保留旧调用且不创建新代次。</summary>
@@ -140,7 +156,7 @@ public sealed class PluginTests
         TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
         fixture.Transport.OnSend = async (id, message, cancellation) =>
         {
-            if (message.Segments[0].Text == "hold") await release.Task.WaitAsync(cancellation);
+            if (message.Segments[0].Text == "hold") await release.Task;
             return new TransportResult { State = DeliveryState.Confirmed };
         };
         string first = await fixture.PackageAsync("sample", "v1", token);

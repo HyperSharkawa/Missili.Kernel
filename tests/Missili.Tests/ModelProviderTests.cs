@@ -32,7 +32,7 @@ public sealed class ModelProviderTests
         }, token);
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(token);
         string package = protocol == ModelProtocol.Anthropic ? "anthropic" : "openai";
-        PluginStatus loaded = await fixture.Runtime.Plugins.LoadAsync(Path.Combine(AppContext.BaseDirectory, "Providers", package), RuntimeFixture.Configuration(), token);
+        PluginStatus loaded = await fixture.Runtime.Plugins.LoadAsync(OfficialPluginPackages.GetPath(package), RuntimeFixture.Configuration(), token);
         Assert.Equal(PluginState.Active, loaded.State);
         string credentialVariable = "MISSILI_SYNTHETIC_MODEL_" + Guid.NewGuid().ToString("N");
         Environment.SetEnvironmentVariable(credentialVariable, "synthetic-local-only");
@@ -40,13 +40,14 @@ public sealed class ModelProviderTests
         {
             ModelProviderDefinition provider = new() { Id = "test", Protocol = protocol, BaseUrl = server.BaseAddress, ApiKeyEnvironmentVariable = credentialVariable };
             ModelDefinition model = new() { Id = "test", ProviderId = "test", Name = "synthetic-model" };
-            ConversationProfileSnapshot profile = new() { Revision = 1, Profile = new ConversationProfile { Id = "test", ReplyModels = ["test"] }, Models = ImmutableDictionary<string, ModelDefinition>.Empty.Add("test", model), Providers = ImmutableDictionary<string, ModelProviderDefinition>.Empty.Add("test", provider) };
+            ConversationProfileSnapshot profile = new() { Revision = 1, Profile = new ConversationProfile { Id = "test" }, Models = ImmutableDictionary<string, ModelDefinition>.Empty.Add("test", model), Providers = ImmutableDictionary<string, ModelProviderDefinition>.Empty.Add("test", provider) };
             ModelAttemptRequest request = new()
             {
                 AttemptId = Guid.NewGuid(),
                 Model = model,
                 Provider = provider,
-                Request = new ModelRequest { Purpose = "test", Profile = profile, Candidates = ["test"], Stream = streaming, Messages = [new ModelMessage { Role = "user", Content = [ModelBlock.TextBlock("测试")] }] }
+                Messages = [new ModelMessage { Role = "user", Content = [ModelBlock.TextBlock("测试")] }],
+                Request = new ModelRequest { Purpose = "test", Profile = profile, Candidates = ["test"], Stream = streaming, Input = ModelInput.FromTurns([new ModelMessage { Role = "user", Content = [ModelBlock.TextBlock("测试")] }]) }
             };
             ModelProtocolResult result = await InvokeAsync(fixture.Runtime.ModelProviders, request, token);
             Assert.True(result.Complete, result.Error);

@@ -1,2 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <!-- .NET 10 的 Project 启动配置不读取 workingDirectory；CLI 使用此 SDK 属性。 -->
+    <!-- https://learn.microsoft.com/dotnet/core/project-sdk/msbuild-props#run-related-properties -->
+    <RunWorkingDirectory>$(MissiliRepositoryRoot)</RunWorkingDirectory>
+  </PropertyGroup>
 </Project>

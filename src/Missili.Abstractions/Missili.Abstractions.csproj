@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <EmbeddedResource Include="Prompts/MissiliAgent.md" LogicalName="Missili.Agent.DefaultInstructions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="$(ExtensionsVersion)" />
+  </ItemGroup>
+</Project>

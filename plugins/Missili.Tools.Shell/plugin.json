@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "missili.tools.shell",
+  "name": "本地 Shell 工具",
+  "version": "0.4.0",
+  "entryAssembly": "Missili.Tools.Shell.dll",
+  "entryType": "Missili.Tools.Shell.ShellPlugin",
+  "contractVersion": 5
+}

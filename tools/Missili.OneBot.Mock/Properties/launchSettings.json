@@ -1,0 +1,13 @@
+{
+  "profiles": {
+    "Missili.OneBot.Mock": {
+      "commandName": "Project",
+      "launchBrowser": false,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "workingDirectory": "../..",
+      "commandLineArgs": "samples/model-mock/onebot.json"
+    }
+  }
+}

@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Missili.Abstractions;
 using Missili.OneBot.Mock;
-using Missili.Tools.ModelMock;
+using Missili.Model.Mock;
 using Xunit;
 
 namespace Missili.Tests;
@@ -21,9 +21,9 @@ public sealed class ModelEndToEndTests
         string variable = "MISSILI_E2E_MODEL_" + Guid.NewGuid().ToString("N"); Environment.SetEnvironmentVariable(variable, "synthetic");
         try
         {
-            ModelConfiguration config = ModelConfigurationTests.Configuration(new Uri(model.BaseAddress, "/v1"), variable);
+            ConversationConfiguration config = ConversationConfigurationTests.Configuration(new Uri(model.BaseAddress, "/v1"), variable);
             await using OneBotFixture fixture = await OneBotFixture.CreateAsync(reverse, split, token, models: config);
-            PluginStatus provider = await fixture.Runtime.Plugins.LoadAsync(Path.Combine(AppContext.BaseDirectory, "Providers/openai"), RuntimeFixture.Configuration(), token);
+            PluginStatus provider = await fixture.Runtime.Plugins.LoadAsync(OfficialPluginPackages.GetPath("openai"), RuntimeFixture.Configuration(), token);
             Assert.Equal(PluginState.Active, provider.State);
             JsonElement allowed = JsonSerializer.SerializeToElement(new Dictionary<string, object> { ["allowedConversations"] = new[] { OneBotFixture.Address(group) } }, JsonSerializerOptions.Web);
             PluginStatus sample = await fixture.Runtime.Plugins.LoadAsync(Path.Combine(AppContext.BaseDirectory, "Samples/model"), allowed, token);
